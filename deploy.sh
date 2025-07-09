@@ -25,7 +25,15 @@ for servers in "${SERVERS[@]}"; do
   kubectl scale deployment server-deployment --replicas=$servers
 
   # Aguarda todos os pods do servidor ficarem prontos
-  kubectl wait --for=condition=available --timeout=180s deployment/server-deployment
+  kubectl wait --for=condition=available --timeout=180s deployment/server-deployment || {
+    echo "Erro: Falha ao escalar o deployment do servidor para $servers réplicas."
+    echo "Status do deployment:"
+    kubectl describe deployment server-deployment
+    echo "Eventos recentes dos pods:"
+    kubectl get pods -l app=server
+    kubectl describe pods -l app=server
+    exit 1
+  }
 
   for clients in "${CLIENTS[@]}"; do
     for msgs in "${MESSAGES[@]}"; do
