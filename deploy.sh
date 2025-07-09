@@ -5,6 +5,18 @@ SERVERS=(2 4 6 8 10)
 CLIENTS=(10 20 30 40 50 60 70 80 90 100)
 MESSAGES=(1 5 10)
 
+# Garante que o PVC existe antes de tudo
+if ! kubectl get pvc server-pvc > /dev/null 2>&1; then
+  echo "Criando PersistentVolumeClaim 'server-pvc'..."
+  kubectl apply -f server/k8s/pvc.yaml
+  # Aguarda o PVC ficar Bound
+  kubectl wait --for=condition=Bound --timeout=60s pvc/server-pvc || {
+    echo "Erro: PVC 'server-pvc' não ficou Bound."
+    kubectl describe pvc server-pvc
+    exit 1
+  }
+fi
+
 for servers in "${SERVERS[@]}"; do
   # Garante que o deployment existe antes de escalar
   if ! kubectl get deployment server-deployment > /dev/null 2>&1; then
