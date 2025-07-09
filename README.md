@@ -70,12 +70,12 @@ pip install -r server/requirements.txt
 
 1. **(Opcional) Remova cluster antigo:**
     ```sh
-    kind delete cluster
+    kind delete cluster --name cliente-servidor
     ```
 
 2. **Crie o cluster Kind:**
     ```sh
-    kind create cluster --config kind-config.yaml
+    kind create cluster --config kind-config.yaml --name cliente-servidor
     ```
 
 3. **Construa as imagens Docker:**
@@ -86,8 +86,8 @@ pip install -r server/requirements.txt
 
 4. **Carregue as imagens no Kind:**
     ```sh
-    kind load docker-image meu-servidor
-    kind load docker-image meu-cliente
+    kind load docker-image meu-servidor --name cliente-servidor
+    kind load docker-image meu-cliente --name cliente-servidor
     ```
 
 5. **Aplique os manifests Kubernetes:**

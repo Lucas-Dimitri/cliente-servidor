@@ -4,24 +4,29 @@ metadata:
   name: client-load-test
 spec:
   completions: ${NUM_CLIENTES}
-  parallelism: 2
-  completionMode: Indexed  # Ativa a indexação automática
+  parallelism: ${NUM_CLIENTES}
+  completionMode: Indexed # Ativa a indexação automática
   template:
     spec:
       containers:
-      - name: client
-        image: meu-cliente
-        imagePullPolicy: Never
-        env:
-        - name: JOB_COMPLETION_INDEX
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
-        - name: NUM_MENSAGENS
-          value: "${NUM_MENSAGENS}"
-        command: ["sh", "-c", "python app.py ${JOB_COMPLETION_INDEX} ${NUM_MENSAGENS}"]
-        resources:
-          limits:
-            cpu: "500m"
-            memory: "128Mi"
+        - name: client
+          image: meu-cliente
+          imagePullPolicy: Never
+          env:
+            - name: JOB_COMPLETION_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+            - name: NUM_MENSAGENS
+              value: "${NUM_MENSAGENS}"
+          command:
+            [
+              "sh",
+              "-c",
+              "python app.py ${JOB_COMPLETION_INDEX} ${NUM_MENSAGENS}",
+            ]
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "128Mi"
       restartPolicy: Never

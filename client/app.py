@@ -15,5 +15,4 @@ if __name__ == '__main__':
     client_id = sys.argv[1] if len(sys.argv) > 1 else "0"
     num_messages = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
-    for _ in range(num_messages):
-        make_request(client_id)
+    for _ in range(num_messages): make_request(client_id)
