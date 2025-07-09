@@ -3,9 +3,25 @@
 # Test configurations
 SERVERS=(2 4 6 8 10)
 CLIENTS=(10 20 30 40 50 60 70 80 90 100)
-MESSAGES=(1 10 100)
+MESSAGES=(1 5 10)
 
 for servers in "${SERVERS[@]}"; do
+  # Garante que o deployment existe antes de escalar
+  if ! kubectl get deployment server-deployment > /dev/null 2>&1; then
+    echo "Aviso: Deployment 'server-deployment' não encontrado. Tentando recriar..."
+    kubectl apply -f server/k8s/deployment.yaml
+    # Aguarda o deployment ser criado
+    kubectl wait --for=condition=available --timeout=180s deployment/server-deployment || {
+      echo "Erro: Falha ao criar o deployment do servidor."
+      echo "Status do deployment:"
+      kubectl describe deployment server-deployment
+      echo "Eventos recentes dos pods:"
+      kubectl get pods -l app=server
+      kubectl describe pods -l app=server
+      exit 1
+    }
+  fi
+
   kubectl scale deployment server-deployment --replicas=$servers
 
   # Aguarda todos os pods do servidor ficarem prontos
