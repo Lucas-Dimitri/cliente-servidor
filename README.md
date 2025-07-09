@@ -17,6 +17,7 @@ Este projeto implementa um sistema cliente-servidor escalável, desenvolvido par
 ## Descrição
 
 O sistema consiste em:
+
 - **Servidor:** API HTTP que registra cada requisição em um arquivo CSV persistente.
 - **Cliente:** Envia múltiplas requisições concorrentes ao servidor, parametrizável por quantidade de mensagens.
 - **Automação:** Script `deploy.sh` executa todos os cenários de teste, coleta resultados e gera gráficos.
@@ -48,6 +49,7 @@ cliente-servidor/
 - Bibliotecas Python: Flask, Gunicorn, pandas, matplotlib
 
 Instale as dependências Python para análise:
+
 ```sh
 pip install -r server/requirements.txt
 ```
@@ -59,7 +61,7 @@ pip install -r server/requirements.txt
 - **Cluster:** Kubernetes local via Kind
 - **Servidor:** Python Flask + Gunicorn, persistência via PVC
 - **Cliente:** Python, parametrizável por variáveis de ambiente
-- **Cenários:** 
+- **Cenários:**
   - Servidores: 2, 4, 6, 8, 10 réplicas
   - Clientes: 10 a 100 (incremento de 10)
   - Mensagens por cliente: 1, 10, 100
@@ -69,41 +71,47 @@ pip install -r server/requirements.txt
 ## Como Executar
 
 1. **(Opcional) Remova cluster antigo:**
-    ```sh
-    kind delete cluster --name cliente-servidor
-    ```
+
+   ```sh
+   kind delete cluster --name cliente-servidor
+   ```
 
 2. **Crie o cluster Kind:**
-    ```sh
-    kind create cluster --config kind-config.yaml --name cliente-servidor
-    ```
+
+   ```sh
+   kind create cluster --config kind-config.yaml --name cliente-servidor
+   ```
 
 3. **Construa as imagens Docker:**
-    ```sh
-    docker build -t meu-servidor -f server/Dockerfile ./server
-    docker build -t meu-cliente -f client/Dockerfile ./client
-    ```
+
+   ```sh
+   docker build -t meu-servidor -f server/Dockerfile ./server
+   docker build -t meu-cliente -f client/Dockerfile ./client
+   ```
 
 4. **Carregue as imagens no Kind:**
-    ```sh
-    kind load docker-image meu-servidor --name cliente-servidor
-    kind load docker-image meu-cliente --name cliente-servidor
-    ```
+
+   ```sh
+   kind load docker-image meu-servidor --name cliente-servidor
+   kind load docker-image meu-cliente --name cliente-servidor
+   ```
 
 5. **Aplique os manifests Kubernetes:**
-    ```sh
-    kubectl apply -f server/k8s/
-    kubectl apply -f client/k8s/
-    ```
+
+   ```sh
+   kubectl apply -f server/k8s/
+   kubectl apply -f client/k8s/
+   ```
 
 6. **Execute os testes automatizados:**
-    ```sh
-    bash deploy.sh
-    ```
+
+   ```sh
+   bash deploy.sh
+   ```
 
 7. **Resultados:**
-    - O arquivo `requests.csv` será gerado na raiz do projeto.
-    - Gráficos de análise serão salvos após a execução do `analyze.py`.
+   - O arquivo `requests.csv` será gerado na raiz do projeto.
+   - Gráficos de análise serão salvos após a execução do `analyze.py`.
 
 ---
 
