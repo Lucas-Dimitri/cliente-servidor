@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-service-python
+spec:
+  selector:
+    app: server-deployment-python
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000

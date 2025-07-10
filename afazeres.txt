@@ -1,0 +1,48 @@
+===================
+Objetivo
+===================
+O principal objetivo é avaliar a escalabilidade do seu servidor e prepará-lo para a próxima etapa de balanceamento de carga e testes de estresse cliente-servidor.
+
+===================
+Requisitos  
+===================
+1. Implementação do Protocolo: Definir e implementar o protocolo conforme revisado em aula (5, 6, 13 e 14 de junho).  
+
+2. Ajustes no Lado do Cliente: Adicionar um parâmetro configurável para o número de mensagens que cada cliente envia (definido pelo usuário durante a execução).  
+
+3. Threads no Servidor: Implementar suporte a threads (1 thread por cliente), caso ainda não tenha sido feito em tarefas anteriores.  
+
+4. Registro de Dados: Registrar as requisições dos clientes em formato CSV para análise e visualização.  
+
+5. Geração de Gráficos: Produzir gráficos comparando os resultados dos diferentes cenários de execução.  
+
+6. Linguagens: Utilizar duas linguagens de programação distintas para o cliente-servidor. Preferencialmente, a segunda linguagem deve ser Go, C, C++, Rust ou linguagem equivalente.
+
+7. Script de Execução Automatizada: Um único script deve:  
+     - Configurar o cluster Kubernetes.  
+     - Executar todas as configurações de teste pré-definidas.  
+     - Gerar gráficos para análise dos resultados.  
+
+===================
+Cenários de Teste
+===================
+- Servidores: Executar de 2 a 10 instâncias, incrementando de 2 em 2 (ou seja: 2, 4, 6, 8, 10).  
+- Clientes: Testar com 10 a 100 clientes, incrementando de 10 em 10 (ou seja: 10, 20, ..., 100).  
+  - Para cada quantidade de clientes, testar o envio de 1, 10, 100, 500, 1000, 10000 mensagens.  
+  - Total mínimo de execuções: 5 (servidores) × 10 (clientes) × 6 (mensagens) = 300 execuções para cada linguagem.  
+
+===================
+Estatísticas e Gráficos
+===================
+
+É importante destacar que os gráficos e estatísticas deverão representar a média de 10 execuções. Nos resultados (e.g., gráficos, tabelas, ...) deverão ser apresentados: máximo, mínimo, média, mediana e desvio padrão.
+
+Isso significa que 300 execuções/configurações para cada linguagem irá levar a um total mínimo de 3000 execuções (300 * 10).
+
+Também deverão ser utilizadas técnicas estatísticas (e.g.. z-score) para eliminar as execuções/tempos mais anômalos dos experimentos.
+
+===================
+Entregar:  
+===================
+- Código fonte.
+- Gráficos dos resultados das execuções.

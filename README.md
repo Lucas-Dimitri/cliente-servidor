@@ -85,14 +85,15 @@ pip install -r server/requirements.txt
 3. **Construa as imagens Docker:**
 
    ```sh
-   docker build -t meu-servidor -f server/Dockerfile ./server
+   docker build -t meu-servidor-python -f server-python/Dockerfile ./server-python
+   docker build -t meu-servidor-go -f server-go/Dockerfile ./server-go
    docker build -t meu-cliente -f client/Dockerfile ./client
    ```
 
 4. **Carregue as imagens no Kind:**
 
    ```sh
-   kind load docker-image meu-servidor --name cliente-servidor
+   kind load docker-image meu-servidor-python --name cliente-servidor
    kind load docker-image meu-cliente --name cliente-servidor
    ```
 

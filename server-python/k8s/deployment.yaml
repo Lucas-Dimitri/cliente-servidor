@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: server-deployment
+  name: server-deployment-python
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: server
+      app: server-deployment-python
   template:
     metadata:
       labels:
-        app: server
+        app: server-deployment-python
     spec:
       containers:
         - name: server
           volumeMounts:
             - name: data-volume
               mountPath: /data
-          image: meu-servidor
+          image: meu-servidor-python
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
@@ -30,5 +30,4 @@ spec:
               memory: "512Mi"
       volumes:
         - name: data-volume
-          persistentVolumeClaim:
-            claimName: server-pvc
+          emptyDir: {} # Each pod gets its own storage

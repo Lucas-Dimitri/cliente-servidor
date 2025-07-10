@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-deployment-go
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: server-deployment-go
+  template:
+    metadata:
+      labels:
+        app: server-deployment-go
+    spec:
+      containers:
+        - name: server
+          volumeMounts:
+            - name: data-volume
+              mountPath: /data
+          image: meu-servidor-go
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: data-volume
+          emptyDir: {} # Each pod gets its own storage

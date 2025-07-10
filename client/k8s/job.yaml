@@ -5,7 +5,7 @@ metadata:
 spec:
   completions: ${NUM_CLIENTES}
   parallelism: ${NUM_CLIENTES}
-  completionMode: Indexed # Ativa a indexação automática
+  completionMode: Indexed
   template:
     spec:
       containers:
@@ -19,6 +19,8 @@ spec:
                   fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
             - name: NUM_MENSAGENS
               value: "${NUM_MENSAGENS}"
+            - name: SERVER_SERVICE
+              value: "${SERVER_SERVICE}"
           command:
             [
               "sh",
