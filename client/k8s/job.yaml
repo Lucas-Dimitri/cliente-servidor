@@ -11,7 +11,7 @@ spec:
       containers:
         - name: client
           image: meu-cliente
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           env:
             - name: JOB_COMPLETION_INDEX
               valueFrom:

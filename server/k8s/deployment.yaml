@@ -13,19 +13,22 @@ spec:
         app: server
     spec:
       containers:
-      - name: server
-        volumeMounts:
-        - name: data-volume
-          mountPath: /data
-        image: meu-servidor
-        imagePullPolicy: Never
-        ports:
-        - containerPort: 5000
-        resources:
-          limits:
-            cpu: "2000m"
-            memory: "512Mi"
+        - name: server
+          volumeMounts:
+            - name: data-volume
+              mountPath: /data
+          image: meu-servidor
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
       volumes:
-      - name: data-volume
-        persistentVolumeClaim:
-          claimName: server-pvc
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: server-pvc
