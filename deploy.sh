@@ -85,6 +85,7 @@ function wait_for_pods_ready() {
 function collect_data_from_pods() {
   local deployment=$1
   local timestamp=$2
+  local language=$3
   local temp_file="temp_results_${timestamp}.csv"
   
   # Get all pod names
@@ -103,7 +104,11 @@ function collect_data_from_pods() {
     else
       echo "  ✗ Falha ao copiar de $pod" >&2
       # Try to check if the file exists in the pod
-      kubectl exec "$pod" -- ls -la /data/ 2>/dev/null >&2 || echo "  ✗ Não conseguiu listar /data/ no pod $pod" >&2
+      if [[ "$language" == "go" ]]; then
+        kubectl exec "$pod" -- sh -c "ls -la /data/" 2>/dev/null >&2 || echo "  ✗ Não conseguiu listar /data/ no pod $pod" >&2
+      else
+        kubectl exec "$pod" -- ls -la /data/ 2>/dev/null >&2 || echo "  ✗ Não conseguiu listar /data/ no pod $pod" >&2
+      fi
     fi
     
     # Process only if the file exists and has content
@@ -273,7 +278,7 @@ for servers in "${SERVERS[@]}"; do
         fi
       fi
       
-      temp_file=$(collect_data_from_pods "$DEPLOYMENT_NAME" "$TIMESTAMP")
+      temp_file=$(collect_data_from_pods "$DEPLOYMENT_NAME" "$TIMESTAMP" "$LANGUAGE")
       
       # Process and append results
       if [ -s "$temp_file" ]; then
