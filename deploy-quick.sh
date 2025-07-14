@@ -29,10 +29,10 @@ echo ""
 
 # Export variables for use in main script
 export QUICK_TEST=true
-export SERVERS_CONFIG="2 4"
-export CLIENTS_CONFIG="10 20"
-export MESSAGES_CONFIG="1 10"
-export ITERATIONS_CONFIG="2"
+export SERVERS_CONFIG="2 4 6"
+export CLIENTS_CONFIG="10 20 30"
+export MESSAGES_CONFIG="1 10 100"
+export ITERATIONS_CONFIG="5"
 
 # Call the main deploy script with the same parameters
 exec $(dirname "$0")/deploy.sh "$@"

@@ -1,199 +1,36 @@
-# In a new file (e.g., analyze.py)
+# Análise 3D Interativa de Performance - Cliente-Servidor
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 import os
 import shutil
 import sys
+import plotly.graph_objects as go
+import plotly.subplots as sp
+from plotly.offline import plot
+from scipy.interpolate import griddata
 
 
-def analyze_file(input_file, results_dir_suffix=""):
+def generate_interactive_3d_plots(file_py, file_go):
     """
-    Analyzes a single request data file, calculates statistics, and generates graphs.
+    Gera gráficos 3D verdadeiramente interativos usando Plotly.
+    Os gráficos são salvos como arquivos HTML que abrem no navegador.
     """
-    # --- Configuração ---
-    Z_SCORE_THRESHOLD = 3
-    RESULTS_DIR = "analysis_results"
-    if results_dir_suffix:
-        RESULTS_DIR = f"{RESULTS_DIR}_{results_dir_suffix}"
+    print("--- Gerando Gráficos 3D Interativos com Plotly ---")
 
-    # --- Limpa e cria o diretório de resultados ---
-    if os.path.exists(RESULTS_DIR):
-        shutil.rmtree(RESULTS_DIR)
-    os.makedirs(RESULTS_DIR)
-
-    # --- Carregamento e Limpeza dos Dados ---
-    print(f"Carregando dados de: {input_file}")
-    try:
-        df = pd.read_csv(input_file)
-        if df.empty:
-            print(f"Aviso: Arquivo '{input_file}' está vazio.")
-            return None
-    except FileNotFoundError:
-        print(f"Erro: Arquivo '{input_file}' não encontrado.")
-        return None
-
-    # Renomeia as colunas para corresponder às expectativas do script
-    df.rename(
-        columns={
-            "num_servers": "servers",
-            "num_clients": "clients",
-            "num_messages": "messages",
-        },
-        inplace=True,
-    )
-
-    required_cols = [
-        "servers",
-        "clients",
-        "messages",
-        "response_time",
-        "client_receive_time",
-    ]
-    if not all(col in df.columns for col in required_cols):
-        print(
-            f"Erro: O arquivo {input_file} não contém todas as colunas necessárias: {required_cols}"
-        )
-        return None
-
-    df["response_time"] = pd.to_numeric(df["response_time"], errors="coerce")
-    df.dropna(subset=["response_time"], inplace=True)
-
-    # --- Conversão de Timestamp ---
-    # Usa 'client_receive_time' como o timestamp principal para a análise
-    df["timestamp"] = pd.to_datetime(
-        df["client_receive_time"], format="mixed", errors="coerce", utc=True
-    )
-    df.dropna(subset=["timestamp"], inplace=True)
-
-    # --- Remoção de Outliers com Z-score ---
-    print(f"Removendo outliers com Z-score > {Z_SCORE_THRESHOLD}...")
-    # Handle cases with single data points in a group where std is 0
-    grouped = df.groupby(["servers", "clients", "messages"])
-    df["z_score"] = grouped["response_time"].transform(
-        lambda x: np.abs((x - x.mean()) / x.std()) if x.std() > 0 else 0
-    )
-    df_cleaned = df[df["z_score"] <= Z_SCORE_THRESHOLD]
-    print(f"Removidas {len(df) - len(df_cleaned)} linhas como outliers.")
-
-    # --- Cálculo das Estatísticas Agregadas ---
-    print("Calculando estatísticas agregadas...")
-    stats = (
-        df_cleaned.groupby(["servers", "clients", "messages"])["response_time"]
-        .agg(["mean", "median", "min", "max", "std"])
-        .reset_index()
-    )
-    stats.to_csv(f"{RESULTS_DIR}/estatisticas_agregadas.csv", index=False)
-    print(f"Estatísticas salvas em {RESULTS_DIR}/estatisticas_agregadas.csv")
-
-    # --- Cálculo de Throughput ---
-    print("Calculando throughput...")
-    # Agrupa por cenário de teste
-    grouped = df_cleaned.groupby(["servers", "clients", "messages"])
-
-    # Calcula o número de requisições por grupo
-    requests = grouped.size()
-
-    # Calcula a duração de cada grupo (diferença entre o último e o primeiro timestamp)
-    duration_td = grouped["timestamp"].max() - grouped["timestamp"].min()
-
-    # Converte a duração para segundos. Se a duração for zero, usa 1 segundo para evitar divisão por zero.
-    duration_s = duration_td.dt.total_seconds().where(lambda x: x > 0, 1)
-
-    # Calcula o throughput (requisições por segundo)
-    throughput = requests / duration_s
-
-    # Preenche valores NaN ou infinitos com 0 (caso de grupos com 1 request)
-    throughput.fillna(0, inplace=True)
-    throughput.replace([np.inf, -np.inf], 0, inplace=True)
-
-    print("Estatísticas de Throughput (requisições/segundo):")
-    print(throughput.describe())
-
-    # Salva o throughput em um arquivo CSV
-    throughput.to_csv(os.path.join(RESULTS_DIR, "throughput.csv"))
-
-    # Adiciona o throughput ao DataFrame de estatísticas
-    stats = pd.merge(
-        stats,
-        throughput.reset_index(name="throughput"),
-        on=["servers", "clients", "messages"],
-    )
-
-    if stats.empty:
-        print(f"Aviso: Nenhuma estatística para plotar para {input_file}.")
-        return stats
-
-    # --- Geração de Gráfico de Throughput ---
-    print("Gerando gráfico de throughput...")
-    plt.figure(figsize=(12, 8))
-    for srv in sorted(stats["servers"].unique()):
-        subset = stats[stats["servers"] == srv]
-        # Plot throughput vs. clients. Grouping by messages will create multiple lines if needed.
-        for msg_count in sorted(subset["messages"].unique()):
-            scenario_subset = subset[subset["messages"] == msg_count]
-            plt.plot(
-                scenario_subset["clients"],
-                scenario_subset["throughput"],
-                marker="o",
-                linestyle="-",
-                label=f"{srv} Servidores, {msg_count} Mensagens",
-            )
-    plt.title("Throughput vs. Número de Clientes")
-    plt.xlabel("Número de Clientes")
-    plt.ylabel("Throughput (requisições/s)")
-    plt.legend()
-    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-    plt.tight_layout()
-    plt.savefig(f"{RESULTS_DIR}/throughput_vs_clientes.png")
-    print("Gráfico 'Throughput' salvo.")
-
-    # --- Geração de Gráficos ---
-
-    # Gráfico 1: Tempo de Resposta Médio vs. Clientes (com desvio padrão)
-    plt.figure(figsize=(12, 8))
-    for srv in sorted(stats["servers"].unique()):
-        subset = stats[stats["servers"] == srv]
-        plt.errorbar(
-            subset["clients"],
-            subset["mean"],
-            yerr=subset["std"],
-            marker="o",
-            capsize=5,
-            label=f"{srv} Servidores",
-        )
-    plt.title("Tempo de Resposta Médio vs. Número de Clientes")
-    plt.xlabel("Número de Clientes")
-    plt.ylabel("Tempo de Resposta Médio (s)")
-    plt.legend()
-    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-    plt.tight_layout()
-    plt.savefig(f"{RESULTS_DIR}/tempo_resposta_vs_clientes.png")
-    print("Gráfico 'Tempo de Resposta' salvo.")
-
-    print(f"\nAnálise concluída para {input_file}!")
-    return stats
-
-
-def compare_results(file_py, file_go):
-    """
-    Compares results from Python and Go implementations and generates a comparative graph.
-    """
-    print("--- Carregando dados para comparação ---")
+    # Carregar dados
     try:
         df_py = pd.read_csv(file_py)
         df_go = pd.read_csv(file_go)
     except FileNotFoundError as e:
-        print(f"Erro: Arquivo de resultados não encontrado: {e.filename}")
+        print(f"Erro: Arquivo não encontrado: {e.filename}")
         return
 
+    # Preparar dados
     df_py["implementation"] = "Python"
     df_go["implementation"] = "Go"
-
     df_combined = pd.concat([df_py, df_go], ignore_index=True)
 
-    # Renomeia colunas se necessário
+    # Renomear colunas para padronização
     df_combined.rename(
         columns={
             "num_servers": "servers",
@@ -203,401 +40,700 @@ def compare_results(file_py, file_go):
         inplace=True,
     )
 
-    # --- Limpeza e Remoção de Outliers ---
+    # Limpeza de dados
     df_combined["response_time"] = pd.to_numeric(
         df_combined["response_time"], errors="coerce"
     )
     df_combined.dropna(subset=["response_time"], inplace=True)
 
-    # --- Conversão de Timestamp para a comparação ---
-    if "client_receive_time" in df_combined.columns:
-        df_combined["timestamp"] = pd.to_datetime(
-            df_combined["client_receive_time"],
-            format="mixed",
-            errors="coerce",
-            utc=True,
-        )
-        df_combined.dropna(subset=["timestamp"], inplace=True)
-    else:
-        print("Aviso: Coluna 'client_receive_time' não encontrada para a comparação.")
-
+    # Remover outliers (Z-score > 3)
     grouped = df_combined.groupby(["servers", "clients", "messages", "implementation"])
     df_combined["z_score"] = grouped["response_time"].transform(
         lambda x: np.abs((x - x.mean()) / x.std()) if x.std() > 0 else 0
     )
     df_cleaned = df_combined[df_combined["z_score"] <= 3]
 
-    # --- Cálculo das Estatísticas Agregadas ---
-    print("Calculando estatísticas agregadas para comparação...")
-    stats_combined = (
-        df_cleaned.groupby(["servers", "clients", "implementation"])["response_time"]
+    # Calcular estatísticas agregadas
+    stats = (
+        df_cleaned.groupby(["servers", "clients", "messages", "implementation"])[
+            "response_time"
+        ]
         .agg(["mean", "std"])
         .reset_index()
     )
 
-    # --- Geração do Gráfico Comparativo ---
-    RESULTS_DIR = "analysis_results"
-    if not os.path.exists(RESULTS_DIR):
-        os.makedirs(RESULTS_DIR)
+    # Criar diretório de resultados
+    RESULTS_DIR = "analysis_results_interactive"
+    if os.path.exists(RESULTS_DIR):
+        shutil.rmtree(RESULTS_DIR)
+    os.makedirs(RESULTS_DIR)
 
-    print("Gerando gráfico comparativo...")
-    plt.figure(figsize=(15, 10))
-    # Create a scenario label for the x-axis
-    stats_combined["scenario"] = stats_combined.apply(
-        lambda row: f"{row['clients']} Clientes, {row['servers']} Servidores", axis=1
+    # 1. Gráficos por número de mensagens
+    unique_messages = sorted(stats["messages"].unique())
+
+    for msg_count in unique_messages:
+        msg_data = stats[stats["messages"] == msg_count]
+
+        # Criar subplot
+        fig = sp.make_subplots(
+            rows=1,
+            cols=2,
+            specs=[[{"type": "surface"}, {"type": "surface"}]],
+            subplot_titles=["Python", "Go"],
+            horizontal_spacing=0.1,
+        )
+
+        # Python data
+        py_data = msg_data[msg_data["implementation"] == "Python"]
+        if not py_data.empty:
+            _add_plotly_surface(fig, py_data, "Python", "blues", 1, 1)
+
+        # Go data
+        go_data = msg_data[msg_data["implementation"] == "Go"]
+        if not go_data.empty:
+            _add_plotly_surface(fig, go_data, "Go", "reds", 1, 2)
+
+        # Layout
+        fig.update_layout(
+            title=f"Análise 3D Interativa - {msg_count} Mensagem(s)",
+            scene=dict(
+                xaxis_title="Número de Clientes",
+                yaxis_title="Número de Servidores",
+                zaxis_title="Tempo Médio (s)",
+            ),
+            scene2=dict(
+                xaxis_title="Número de Clientes",
+                yaxis_title="Número de Servidores",
+                zaxis_title="Tempo Médio (s)",
+            ),
+            width=1200,
+            height=600,
+        )
+
+        # Salvar arquivo HTML
+        filename = f"{RESULTS_DIR}/interactive_3d_messages_{msg_count}.html"
+        plot(fig, filename=filename, auto_open=False)
+        print(f"✓ Gráfico 3D interativo salvo: {filename}")
+
+    # 2. Gráfico final: clientes vs mensagens
+    final_stats = (
+        stats.groupby(["clients", "messages", "implementation"])["mean"]
+        .mean()
+        .reset_index()
     )
 
-    sns.barplot(
-        data=stats_combined,
-        x="scenario",
-        y="mean",
-        hue="implementation",
-        palette={"Python": "skyblue", "Go": "lightgreen"},
+    fig = sp.make_subplots(
+        rows=1,
+        cols=2,
+        specs=[[{"type": "surface"}, {"type": "surface"}]],
+        subplot_titles=["Python - Clientes vs Mensagens", "Go - Clientes vs Mensagens"],
+        horizontal_spacing=0.1,
     )
 
-    plt.title("Comparativo de Desempenho: Python vs. Go", fontsize=16)
-    plt.xlabel("Cenário de Teste", fontsize=12)
-    plt.ylabel("Tempo de Resposta Médio (s)", fontsize=12)
-    plt.xticks(rotation=45, ha="right")
-    plt.legend(title="Implementação")
-    plt.grid(axis="y", linestyle="--", linewidth=0.7)
-    plt.tight_layout()
+    # Python data
+    py_final = final_stats[final_stats["implementation"] == "Python"]
+    if not py_final.empty:
+        _add_plotly_surface_messages(fig, py_final, "Python", "blues", 1, 1)
 
-    output_path = f"{RESULTS_DIR}/comparativo_python_vs_go.png"
-    plt.savefig(output_path)
-    print(f"Gráfico comparativo salvo em: {output_path}")
-    print("\nAnálise comparativa concluída!")
+    # Go data
+    go_final = final_stats[final_stats["implementation"] == "Go"]
+    if not go_final.empty:
+        _add_plotly_surface_messages(fig, go_final, "Go", "reds", 1, 2)
+
+    fig.update_layout(
+        title="Análise 3D - Clientes vs Mensagens",
+        scene=dict(
+            xaxis_title="Número de Clientes",
+            yaxis_title="Número de Mensagens",
+            zaxis_title="Tempo Médio (s)",
+        ),
+        scene2=dict(
+            xaxis_title="Número de Clientes",
+            yaxis_title="Número de Mensagens",
+            zaxis_title="Tempo Médio (s)",
+        ),
+        width=1200,
+        height=600,
+    )
+
+    filename = f"{RESULTS_DIR}/interactive_3d_final.html"
+    plot(fig, filename=filename, auto_open=False)
+    print(f"✓ Gráfico 3D final interativo salvo: {filename}")
+
+    # 3. Gráfico comparativo direto
+    _create_comparison_3d_plotly(stats, RESULTS_DIR)
+
+    print(f"\n🎯 Todos os gráficos 3D interativos salvos em: {RESULTS_DIR}/")
+    print("\n📋 INSTRUÇÕES PARA VISUALIZAR:")
+    print("1. Abra o gerenciador de arquivos")
+    print(f"2. Navegue até: {os.path.abspath(RESULTS_DIR)}")
+    print("3. Clique duplo em qualquer arquivo .html")
+    print("4. Ou copie o caminho e cole no navegador:")
+
+    for file in os.listdir(RESULTS_DIR):
+        if file.endswith(".html"):
+            full_path = os.path.abspath(os.path.join(RESULTS_DIR, file))
+            print(f"   file://{full_path}")
+
+    print("\n🖱️  Controles do gráfico:")
+    print("   • Arrastar: Rotacionar")
+    print("   • Scroll: Zoom")
+    print("   • Shift+Arrastar: Pan")
+    print("   • Hover: Ver valores")
 
 
-def generate_advanced_report(df_py, df_go):
-    """
-    Calculates advanced performance metrics and generates a radar chart and summary table.
-    """
-    print("\n--- Gerando Relatório de Métricas Avançadas ---")
-    RESULTS_DIR = "analysis_results"
-    if not os.path.exists(RESULTS_DIR):
-        os.makedirs(RESULTS_DIR)
+def _add_plotly_surface(fig, data, name, colorscale, row, col):
+    """Adiciona superfície 3D ao subplot"""
+    if data.empty:
+        return
 
-    metrics_data = []
+    x = data["clients"].values
+    y = data["servers"].values
+    z = data["mean"].values
 
-    for df, name in [(df_py, "Python"), (df_go, "Go")]:
-        # --- Check for empty dataframe ---
-        if df.empty:
-            print(f"Aviso: DataFrame para '{name}' está vazio. Métricas serão zeradas.")
-            metrics_data.append(
-                {
-                    "Implementação": name,
-                    "Escalabilidade": 0,
-                    "Speedup": 0,
-                    "Eficiência Relativa": 0,
-                    "Consistência (DPR)": np.inf,
-                    "Overhead (ms/cli)": np.inf,
-                    "Resp. por Mensagem (ms)": np.inf,
-                }
-            )
-            continue
+    # Criar grid para interpolação
+    if len(x) > 3:
+        clients_range = np.linspace(x.min(), x.max(), 20)
+        servers_range = np.linspace(y.min(), y.max(), 20)
+        X, Y = np.meshgrid(clients_range, servers_range)
 
-        # --- Pre-processing ---
-        df.rename(
-            columns={
-                "num_servers": "servers",
-                "num_clients": "clients",
-                "num_messages": "messages",
-            },
-            inplace=True,
+        # Interpolar dados
+        Z = griddata((x, y), z, (X, Y), method="linear", fill_value=np.nan)
+
+        # Adicionar superfície
+        fig.add_trace(
+            go.Surface(
+                x=X,
+                y=Y,
+                z=Z,
+                colorscale=colorscale,
+                name=name,
+                opacity=0.8,
+                showscale=True,
+            ),
+            row=row,
+            col=col,
         )
 
-        required_cols = [
-            "servers",
-            "clients",
-            "messages",
-            "response_time",
-            "client_receive_time",
-        ]
-        if not all(col in df.columns for col in required_cols):
-            print(
-                f"Aviso: Colunas necessárias ausentes para '{name}'. Pulando métricas avançadas."
-            )
-            metrics_data.append(
-                {
-                    "Implementação": name,
-                    "Escalabilidade": 0,
-                    "Speedup": 0,
-                    "Eficiência Relativa": 0,
-                    "Consistência (DPR)": np.inf,
-                    "Overhead (ms/cli)": np.inf,
-                    "Resp. por Mensagem (ms)": np.inf,
-                }
-            )
-            continue
+    # Adicionar pontos de dados reais
+    fig.add_trace(
+        go.Scatter3d(
+            x=x,
+            y=y,
+            z=z,
+            mode="markers",
+            marker=dict(size=8, opacity=0.9),
+            name=f"{name} (Dados Reais)",
+            text=[
+                f"Clientes: {c}<br>Servidores: {s}<br>Tempo: {t:.4f}s"
+                for c, s, t in zip(x, y, z)
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        ),
+        row=row,
+        col=col,
+    )
 
-        df["timestamp"] = pd.to_datetime(
-            df["client_receive_time"], format="mixed", errors="coerce", utc=True
-        )
-        df["response_time"] = pd.to_numeric(df["response_time"], errors="coerce")
-        df.dropna(subset=["timestamp", "response_time"], inplace=True)
 
-        if df.empty:
-            print(
-                f"Aviso: DataFrame para '{name}' vazio após limpeza. Métricas serão zeradas."
-            )
-            metrics_data.append(
-                {
-                    "Implementação": name,
-                    "Escalabilidade": 0,
-                    "Speedup": 0,
-                    "Eficiência Relativa": 0,
-                    "Consistência (DPR)": np.inf,
-                    "Overhead (ms/cli)": np.inf,
-                    "Resp. por Mensagem (ms)": np.inf,
-                }
-            )
-            continue
+def _add_plotly_surface_messages(fig, data, name, colorscale, row, col):
+    """Adiciona superfície 3D para clientes vs mensagens"""
+    if data.empty:
+        return
 
-        # --- Throughput Calculation ---
-        group_cols = ["servers", "clients", "messages"]
-        duration = df.groupby(group_cols)["timestamp"].apply(
-            lambda x: (x.max() - x.min()).total_seconds()
-        )
-        duration = duration.where(duration > 0, 1)  # Avoid division by zero
+    x = data["clients"].values
+    y = data["messages"].values
+    z = data["mean"].values
 
-        requests = df.groupby(group_cols).size()
-        throughput_runs = (requests / duration).reset_index(name="throughput")
-        throughput_stats = (
-            throughput_runs.groupby(["servers", "clients"])["throughput"]
-            .agg(["mean", "std"])
-            .reset_index()
+    # Criar grid para interpolação
+    if len(x) > 3:
+        clients_range = np.linspace(x.min(), x.max(), 20)
+        messages_range = np.linspace(y.min(), y.max(), 20)
+        X, Y = np.meshgrid(clients_range, messages_range)
+
+        Z = griddata((x, y), z, (X, Y), method="linear", fill_value=np.nan)
+
+        fig.add_trace(
+            go.Surface(
+                x=X,
+                y=Y,
+                z=Z,
+                colorscale=colorscale,
+                name=name,
+                opacity=0.8,
+                showscale=True,
+            ),
+            row=row,
+            col=col,
         )
 
-        if throughput_stats.empty:
-            print(
-                f"Aviso: Não foi possível calcular o throughput para '{name}'. Pulando métricas."
-            )
-            metrics_data.append(
-                {
-                    "Implementação": name,
-                    "Escalabilidade": 0,
-                    "Speedup": 0,
-                    "Eficiência Relativa": 0,
-                    "Consistência (DPR)": np.inf,
-                    "Overhead (ms/cli)": np.inf,
-                    "Resp. por Mensagem (ms)": np.inf,
-                }
-            )
-            continue
+    # Pontos de dados reais
+    fig.add_trace(
+        go.Scatter3d(
+            x=x,
+            y=y,
+            z=z,
+            mode="markers",
+            marker=dict(size=8, opacity=0.9),
+            name=f"{name} (Dados Reais)",
+            text=[
+                f"Clientes: {c}<br>Mensagens: {m}<br>Tempo: {t:.4f}s"
+                for c, m, t in zip(x, y, z)
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        ),
+        row=row,
+        col=col,
+    )
 
-        # --- Base Metrics for a high-load scenario ---
-        max_clients = throughput_stats["clients"].max()
-        high_load_stats = throughput_stats[throughput_stats["clients"] == max_clients]
 
-        # --- Advanced Metrics Calculation ---
-        if high_load_stats.empty or high_load_stats["servers"].nunique() < 2:
-            print(
-                f"Aviso: Dados insuficientes para calcular escalabilidade para '{name}'."
-            )
-            escalabilidade = 0
-            speedup = 0
-        else:
-            t_s_min = high_load_stats[
-                high_load_stats["servers"] == high_load_stats["servers"].min()
-            ]["mean"].iloc[0]
-            t_s_max = high_load_stats[
-                high_load_stats["servers"] == high_load_stats["servers"].max()
-            ]["mean"].iloc[0]
-            s_min = high_load_stats["servers"].min()
-            s_max = high_load_stats["servers"].max()
-            escalabilidade = (
-                (t_s_max / t_s_min) / (s_max / s_min)
-                if t_s_min > 0 and s_min > 0 and s_max > s_min
-                else 0
-            )
-            speedup = t_s_max / t_s_min if t_s_min > 0 else 0
+def _create_comparison_3d_plotly(stats, results_dir):
+    """Cria gráfico 3D comparativo usando Plotly"""
+    print("Criando gráfico comparativo 3D...")
 
-        # 3. Eficiência Relativa
-        eficiencia = (
-            (high_load_stats["mean"] / high_load_stats["servers"]).mean()
-            if not high_load_stats.empty
-            else 0
+    # Dados agregados para comparação
+    comparison_data = (
+        stats.groupby(["clients", "servers", "implementation"])["mean"]
+        .mean()
+        .reset_index()
+    )
+
+    # Criar figura com 3 subplots
+    fig = sp.make_subplots(
+        rows=1,
+        cols=3,
+        specs=[[{"type": "scatter3d"}, {"type": "scatter3d"}, {"type": "scatter3d"}]],
+        subplot_titles=[
+            "Comparação Direta",
+            "Diferença de Performance",
+            "Distribuição Geral",
+        ],
+        horizontal_spacing=0.05,
+    )
+
+    py_data = comparison_data[comparison_data["implementation"] == "Python"]
+    go_data = comparison_data[comparison_data["implementation"] == "Go"]
+
+    # Subplot 1: Comparação direta
+    if not py_data.empty:
+        fig.add_trace(
+            go.Scatter3d(
+                x=py_data["clients"],
+                y=py_data["servers"],
+                z=py_data["mean"],
+                mode="markers",
+                marker=dict(size=8, color="blue", opacity=0.8),
+                name="Python",
+                text=[
+                    f"Python<br>Clientes: {c}<br>Servidores: {s}<br>Tempo: {t:.4f}s"
+                    for c, s, t in zip(
+                        py_data["clients"], py_data["servers"], py_data["mean"]
+                    )
+                ],
+                hovertemplate="%{text}<extra></extra>",
+            ),
+            row=1,
+            col=1,
         )
 
-        # 4. Consistência (DPR)
-        consistencia = (
-            (df["response_time"].std() / df["response_time"].mean())
-            if df["response_time"].mean() > 0
-            else np.inf
+    if not go_data.empty:
+        fig.add_trace(
+            go.Scatter3d(
+                x=go_data["clients"],
+                y=go_data["servers"],
+                z=go_data["mean"],
+                mode="markers",
+                marker=dict(size=8, color="red", opacity=0.8),
+                name="Go",
+                text=[
+                    f"Go<br>Clientes: {c}<br>Servidores: {s}<br>Tempo: {t:.4f}s"
+                    for c, s, t in zip(
+                        go_data["clients"], go_data["servers"], go_data["mean"]
+                    )
+                ],
+                hovertemplate="%{text}<extra></extra>",
+            ),
+            row=1,
+            col=1,
         )
 
-        # 5. Overhead
-        overhead = (
-            (df["response_time"].mean() * 1000) / df["clients"].mean()
-            if df["clients"].mean() > 0
-            else np.inf
+    # Subplot 2: Diferença de performance
+    if not py_data.empty and not go_data.empty:
+        merged = pd.merge(
+            py_data, go_data, on=["clients", "servers"], suffixes=("_py", "_go")
         )
+        if not merged.empty:
+            diff = merged["mean_go"] - merged["mean_py"]
+            fig.add_trace(
+                go.Scatter3d(
+                    x=merged["clients"],
+                    y=merged["servers"],
+                    z=diff,
+                    mode="markers",
+                    marker=dict(
+                        size=8,
+                        color=diff,
+                        colorscale="RdBu",
+                        opacity=0.8,
+                        showscale=True,
+                        colorbar=dict(title="Diferença (s)"),
+                    ),
+                    name="Diferença (Go - Python)",
+                    text=[
+                        f"Diferença: {d:.4f}s<br>Clientes: {c}<br>Servidores: {s}"
+                        for c, s, d in zip(merged["clients"], merged["servers"], diff)
+                    ],
+                    hovertemplate="%{text}<extra></extra>",
+                ),
+                row=1,
+                col=2,
+            )
 
-        # 6. Resposta por Mensagem
-        resp_por_msg = df["response_time"].mean() * 1000
-
-        metrics_data.append(
-            {
-                "Implementação": name,
-                "Escalabilidade": escalabilidade,
-                "Speedup": speedup,
-                "Eficiência Relativa": eficiencia,
-                "Consistência (DPR)": consistencia,
-                "Overhead (ms/cli)": overhead,
-                "Resp. por Mensagem (ms)": resp_por_msg,
-            }
-        )
-
-    metrics_df = pd.DataFrame(metrics_data)
-
-    # --- Data for Radar Chart ---
-    labels = [
-        "Escalabilidade",
-        "Speedup",
-        "Eficiência Relativa",
-        "Consistência (DPR)",
-        "Overhead (ms/cli)",
-        "Resp. por Mensagem (ms)",
+    # Subplot 3: Distribuição geral
+    all_data = comparison_data.copy()
+    colors = [
+        "blue" if impl == "Python" else "red" for impl in all_data["implementation"]
     ]
 
-    metrics_plot_df = metrics_df.copy()
-    epsilon = 1e-9  # Evita divisão por zero
-
-    # Inverte as métricas onde "menor é melhor" para que "maior seja melhor"
-    for col in ["Consistência (DPR)", "Overhead (ms/cli)", "Resp. por Mensagem (ms)"]:
-        metrics_plot_df[col] = 1 / (metrics_plot_df[col] + epsilon)
-
-    # Normaliza os dados para o radar (0 a 1)
-    for col in labels:
-        # Handle cases where a column might be all zero or NaN
-        if col in metrics_plot_df:
-            max_val = metrics_plot_df[col].max()
-            if pd.notna(max_val) and max_val > 0:
-                # Normaliza para que o melhor valor seja 1 e o outro seja proporcional
-                metrics_plot_df[col] = metrics_plot_df[col] / max_val
-            else:
-                metrics_plot_df[col] = 0  # Set to 0 if max is 0 or NaN
-
-            # Garante que nenhum valor seja exatamente zero para ser visível no gráfico polar
-            metrics_plot_df[col] = metrics_plot_df[col].clip(lower=0.05)
-        else:
-            metrics_plot_df[col] = 0.05
-
-    stats_go = metrics_plot_df[metrics_plot_df["Implementação"] == "Go"].iloc[0]
-    stats_py = metrics_plot_df[metrics_plot_df["Implementação"] == "Python"].iloc[0]
-
-    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
-    stats_go = np.concatenate((stats_go[labels], [stats_go[labels[0]]]))
-    stats_py = np.concatenate((stats_py[labels], [stats_py[labels[0]]]))
-    angles += angles[:1]
-
-    # --- Plotting ---
-    fig, ax = plt.subplots(figsize=(14, 8), subplot_kw=dict(polar=True))
-
-    # Plot Go
-    ax.plot(
-        angles, stats_go, color="dodgerblue", linewidth=2, linestyle="solid", label="Go"
-    )
-    ax.fill(angles, stats_go, color="dodgerblue", alpha=0.25)
-
-    # Plot Python
-    ax.plot(
-        angles,
-        stats_py,
-        color="darkorange",
-        linewidth=2,
-        linestyle="solid",
-        label="Python",
-    )
-    ax.fill(angles, stats_py, color="darkorange", alpha=0.25)
-
-    ax.set_yticklabels([])
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, size=12)
-    ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
-    plt.title("Radar de Métricas Avançadas de Desempenho", size=16, y=1.1)
-
-    plt.tight_layout()
-    output_path_radar = f"{RESULTS_DIR}/perfil_avancado_radar.png"
-    plt.savefig(output_path_radar, bbox_inches="tight")
-    plt.close(fig)  # Fecha a figura do radar
-    print(f"Gráfico de radar salvo em: {output_path_radar}")
-
-    # --- Geração da Tabela como Imagem Separada ---
-    summary_df = metrics_df.set_index("Implementação").T
-    summary_df["Melhor"] = summary_df.apply(
-        lambda row: (
-            "Go"
-            if (
-                row["Go"] > row["Python"]
-                and row.name
-                not in [
-                    "Consistência (DPR)",
-                    "Overhead (ms/cli)",
-                    "Resp. por Mensagem (ms)",
-                ]
-            )
-            or (
-                row["Go"] < row["Python"]
-                and row.name
-                in [
-                    "Consistência (DPR)",
-                    "Overhead (ms/cli)",
-                    "Resp. por Mensagem (ms)",
-                ]
-            )
-            else "Python"
+    fig.add_trace(
+        go.Scatter3d(
+            x=all_data["clients"],
+            y=all_data["servers"],
+            z=all_data["mean"],
+            mode="markers",
+            marker=dict(size=8, color=colors, opacity=0.8),
+            name="Distribuição",
+            text=[
+                f"{impl}<br>Clientes: {c}<br>Servidores: {s}<br>Tempo: {t:.4f}s"
+                for c, s, t, impl in zip(
+                    all_data["clients"],
+                    all_data["servers"],
+                    all_data["mean"],
+                    all_data["implementation"],
+                )
+            ],
+            hovertemplate="%{text}<extra></extra>",
         ),
-        axis=1,
+        row=1,
+        col=3,
     )
-    summary_df = summary_df.round(4)
 
-    fig_table, ax_table = plt.subplots(figsize=(8, 4))  # Tamanho ajustado para a tabela
-    ax_table.axis("tight")
-    ax_table.axis("off")
-    table = ax_table.table(
-        cellText=summary_df.values,
-        rowLabels=summary_df.index,
-        colLabels=summary_df.columns,
-        loc="center",
-        cellLoc="center",
+    # Layout
+    fig.update_layout(
+        title="Comparação 3D Interativa: Python vs Go",
+        scene=dict(
+            xaxis_title="Clientes",
+            yaxis_title="Servidores",
+            zaxis_title="Tempo Médio (s)",
+        ),
+        scene2=dict(
+            xaxis_title="Clientes",
+            yaxis_title="Servidores",
+            zaxis_title="Diferença (s)",
+        ),
+        scene3=dict(
+            xaxis_title="Clientes",
+            yaxis_title="Servidores",
+            zaxis_title="Tempo Médio (s)",
+        ),
+        width=1800,
+        height=600,
     )
-    table.auto_set_font_size(False)
-    table.set_fontsize(12)
-    table.scale(1.2, 1.2)
 
-    plt.title("Tabela de Métricas de Desempenho", size=16, y=0.85)
-    output_path_table = f"{RESULTS_DIR}/metricas_avancadas_tabela.png"
-    plt.savefig(output_path_table, bbox_inches="tight", dpi=200)
-    plt.close(fig_table)  # Fecha a figura da tabela
-    print(f"Tabela de métricas salva em: {output_path_table}")
+    filename = f"{results_dir}/comparison_3d_interactive.html"
+    plot(fig, filename=filename, auto_open=False)
+    print(f"✓ Gráfico comparativo 3D interativo salvo: {filename}")
+
+
+def generate_overlapped_comparison(file_py, file_go):
+    """
+    Gera gráficos 3D com superfícies sobrepostas de Python e Go
+    para comparação direta no mesmo espaço.
+    """
+    print("--- Gerando Gráficos 3D Sobrepostos Python vs Go ---")
+
+    # Carregar dados
+    try:
+        df_py = pd.read_csv(file_py)
+        df_go = pd.read_csv(file_go)
+    except FileNotFoundError as e:
+        print(f"Erro: Arquivo não encontrado: {e.filename}")
+        return
+
+    # Preparar dados
+    df_py["implementation"] = "Python"
+    df_go["implementation"] = "Go"
+    df_combined = pd.concat([df_py, df_go], ignore_index=True)
+
+    # Renomear colunas
+    df_combined.rename(
+        columns={
+            "num_servers": "servers",
+            "num_clients": "clients",
+            "num_messages": "messages",
+        },
+        inplace=True,
+    )
+
+    # Limpeza de dados
+    df_combined["response_time"] = pd.to_numeric(
+        df_combined["response_time"], errors="coerce"
+    )
+    df_combined.dropna(subset=["response_time"], inplace=True)
+
+    # Remover outliers
+    grouped = df_combined.groupby(["servers", "clients", "messages", "implementation"])
+    df_combined["z_score"] = grouped["response_time"].transform(
+        lambda x: np.abs((x - x.mean()) / x.std()) if x.std() > 0 else 0
+    )
+    df_cleaned = df_combined[df_combined["z_score"] <= 3]
+
+    # Calcular estatísticas agregadas
+    stats = (
+        df_cleaned.groupby(["servers", "clients", "messages", "implementation"])[
+            "response_time"
+        ]
+        .agg(["mean", "std"])
+        .reset_index()
+    )
+
+    RESULTS_DIR = "analysis_results_interactive"
+    if not os.path.exists(RESULTS_DIR):
+        os.makedirs(RESULTS_DIR)
+
+    # 1. Gráficos sobrepostos por número de mensagens
+    unique_messages = sorted(stats["messages"].unique())
+
+    for msg_count in unique_messages:
+        msg_data = stats[stats["messages"] == msg_count]
+
+        fig = go.Figure()
+
+        # Dados Python e Go
+        py_data = msg_data[msg_data["implementation"] == "Python"]
+        go_data = msg_data[msg_data["implementation"] == "Go"]
+
+        # Adicionar superfícies sobrepostas
+        if not py_data.empty:
+            _add_overlapped_surface(fig, py_data, "Python", "Blues", 0.6)
+
+        if not go_data.empty:
+            _add_overlapped_surface(fig, go_data, "Go", "Reds", 0.6)
+
+        # Layout
+        fig.update_layout(
+            title=f"Comparação Sobreposta 3D - {msg_count} Mensagem(s)<br><sub>Azul = Python | Vermelho = Go | Superfícies mais baixas = melhor performance</sub>",
+            scene=dict(
+                xaxis_title="Número de Clientes",
+                yaxis_title="Número de Servidores",
+                zaxis_title="Tempo Médio (s)",
+                camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
+            ),
+            width=1000,
+            height=700,
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+        )
+
+        filename = f"{RESULTS_DIR}/overlapped_3d_messages_{msg_count}.html"
+        plot(fig, filename=filename, auto_open=False)
+        print(f"✓ Gráfico sobreposto salvo: overlapped_3d_messages_{msg_count}.html")
+
+    # 2. Gráfico sobreposto final: clientes vs mensagens
+    final_stats = (
+        stats.groupby(["clients", "messages", "implementation"])["mean"]
+        .mean()
+        .reset_index()
+    )
+
+    fig = go.Figure()
+
+    py_final = final_stats[final_stats["implementation"] == "Python"]
+    go_final = final_stats[final_stats["implementation"] == "Go"]
+
+    if not py_final.empty:
+        _add_overlapped_surface_messages(fig, py_final, "Python", "Blues", 0.6)
+
+    if not go_final.empty:
+        _add_overlapped_surface_messages(fig, go_final, "Go", "Reds", 0.6)
+
+    fig.update_layout(
+        title="Comparação Sobreposta 3D - Clientes vs Mensagens<br><sub>Azul = Python | Vermelho = Go | Superfícies mais baixas = melhor performance</sub>",
+        scene=dict(
+            xaxis_title="Número de Clientes",
+            yaxis_title="Número de Mensagens",
+            zaxis_title="Tempo Médio (s)",
+            camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
+        ),
+        width=1000,
+        height=700,
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+    )
+
+    filename = f"{RESULTS_DIR}/overlapped_3d_final.html"
+    plot(fig, filename=filename, auto_open=False)
+    print(f"✓ Gráfico sobreposto final salvo: overlapped_3d_final.html")
+
+    # 3. Gráfico comparativo geral sobreposto
+    comparison_data = (
+        stats.groupby(["clients", "servers", "implementation"])["mean"]
+        .mean()
+        .reset_index()
+    )
+
+    fig = go.Figure()
+
+    py_comp = comparison_data[comparison_data["implementation"] == "Python"]
+    go_comp = comparison_data[comparison_data["implementation"] == "Go"]
+
+    if not py_comp.empty:
+        _add_overlapped_surface(fig, py_comp, "Python", "Blues", 0.6)
+
+    if not go_comp.empty:
+        _add_overlapped_surface(fig, go_comp, "Go", "Reds", 0.6)
+
+    fig.update_layout(
+        title="Comparação Sobreposta Geral - Clientes vs Servidores<br><sub>Azul = Python | Vermelho = Go | Superfícies mais baixas = melhor performance</sub>",
+        scene=dict(
+            xaxis_title="Número de Clientes",
+            yaxis_title="Número de Servidores",
+            zaxis_title="Tempo Médio (s)",
+            camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
+        ),
+        width=1000,
+        height=700,
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+    )
+
+    filename = f"{RESULTS_DIR}/overlapped_3d_general.html"
+    plot(fig, filename=filename, auto_open=False)
+    print(f"✓ Gráfico sobreposto geral salvo: overlapped_3d_general.html")
+
+    print(f"\n🎯 Gráficos sobrepostos salvos em: {RESULTS_DIR}/")
+    print("🔍 Nos gráficos sobrepostos, você pode:")
+    print("   • Ver diretamente qual implementação é mais rápida")
+    print("   • A superfície mais baixa representa melhor performance")
+    print("   • Azul = Python, Vermelho = Go")
+
+
+def _add_overlapped_surface(fig, data, name, colorscale, opacity):
+    """Adiciona superfície 3D sobreposta para clientes vs servidores"""
+    if data.empty:
+        return
+
+    x = data["clients"].values
+    y = data["servers"].values
+    z = data["mean"].values
+
+    # Criar grid para interpolação
+    if len(x) > 3:
+        clients_range = np.linspace(x.min(), x.max(), 25)
+        servers_range = np.linspace(y.min(), y.max(), 25)
+        X, Y = np.meshgrid(clients_range, servers_range)
+
+        # Interpolar dados
+        Z = griddata((x, y), z, (X, Y), method="linear", fill_value=np.nan)
+
+        # Adicionar superfície
+        fig.add_trace(
+            go.Surface(
+                x=X,
+                y=Y,
+                z=Z,
+                colorscale=colorscale,
+                name=name,
+                opacity=opacity,
+                showscale=True,
+                colorbar=dict(
+                    title=f"{name}<br>Tempo (s)", x=0.9 if name == "Go" else 0.02
+                ),
+            )
+        )
+
+    # Adicionar pontos de dados reais
+    fig.add_trace(
+        go.Scatter3d(
+            x=x,
+            y=y,
+            z=z,
+            mode="markers",
+            marker=dict(
+                size=6, opacity=0.9, color="darkblue" if name == "Python" else "darkred"
+            ),
+            name=f"{name} (Dados)",
+            text=[
+                f"{name}<br>Clientes: {c}<br>Servidores: {s}<br>Tempo: {t:.4f}s"
+                for c, s, t in zip(x, y, z)
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        )
+    )
+
+
+def _add_overlapped_surface_messages(fig, data, name, colorscale, opacity):
+    """Adiciona superfície 3D sobreposta para clientes vs mensagens"""
+    if data.empty:
+        return
+
+    x = data["clients"].values
+    y = data["messages"].values
+    z = data["mean"].values
+
+    # Criar grid para interpolação
+    if len(x) > 3:
+        clients_range = np.linspace(x.min(), x.max(), 25)
+        messages_range = np.linspace(y.min(), y.max(), 25)
+        X, Y = np.meshgrid(clients_range, messages_range)
+
+        Z = griddata((x, y), z, (X, Y), method="linear", fill_value=np.nan)
+
+        fig.add_trace(
+            go.Surface(
+                x=X,
+                y=Y,
+                z=Z,
+                colorscale=colorscale,
+                name=name,
+                opacity=opacity,
+                showscale=True,
+                colorbar=dict(
+                    title=f"{name}<br>Tempo (s)", x=0.9 if name == "Go" else 0.02
+                ),
+            )
+        )
+
+    # Pontos de dados reais
+    fig.add_trace(
+        go.Scatter3d(
+            x=x,
+            y=y,
+            z=z,
+            mode="markers",
+            marker=dict(
+                size=6, opacity=0.9, color="darkblue" if name == "Python" else "darkred"
+            ),
+            name=f"{name} (Dados)",
+            text=[
+                f"{name}<br>Clientes: {c}<br>Mensagens: {m}<br>Tempo: {t:.4f}s"
+                for c, m, t in zip(x, y, z)
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        )
+    )
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Uso: python analyze.py <arquivo.csv> | compare")
+    if len(sys.argv) != 2:
+        print("Uso: python analyze.py <comando>")
+        print("Comandos disponíveis:")
+        print("  interactive  - Gráficos 3D lado a lado")
+        print("  overlapped   - Gráficos 3D sobrepostos (comparação direta)")
         sys.exit(1)
 
     command = sys.argv[1]
 
-    if command == "compare":
-        analyze_file("requests_python.csv", "python")
-        analyze_file("requests_go.csv", "go")
-        compare_results("requests_python.csv", "requests_go.csv")
-        try:
-            # Read the cleaned and aggregated stats, not the raw files
-            df_py = pd.read_csv("requests_python.csv")
-            df_go = pd.read_csv("requests_go.csv")
-            generate_advanced_report(df_py, df_go)
-        except FileNotFoundError as e:
-            print(
-                f"Erro ao gerar relatório avançado: Arquivo não encontrado - {e.filename}"
-            )
-        except Exception as e:
-            print(f"Um erro inesperado ocorreu ao gerar o relatório avançado: {e}")
-    elif command == "python" or command == "go":
-        analyze_file(f"requests_{command}.csv", command)
+    if command == "interactive":
+        generate_interactive_3d_plots("requests_python.csv", "requests_go.csv")
+    elif command == "overlapped":
+        generate_overlapped_comparison("requests_python.csv", "requests_go.csv")
     else:
-        print("Comando inválido. Use 'python', 'go' ou 'compare'.")
+        print("Comando inválido. Use 'interactive' ou 'overlapped'.")
         sys.exit(1)
