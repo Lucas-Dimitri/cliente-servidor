@@ -27,8 +27,6 @@ spec:
               "-c",
               "python app.py ${JOB_COMPLETION_INDEX} ${NUM_MENSAGENS}",
             ]
-          resources:
-            limits:
-              cpu: "500m"
-              memory: "128Mi"
+          # Resources removed to allow unlimited usage of available system resources
+          # This will improve performance by removing CPU and memory bottlenecks
       restartPolicy: Never

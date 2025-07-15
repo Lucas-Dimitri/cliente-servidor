@@ -21,13 +21,8 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
-          resources:
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
+          # Resources removed to allow unlimited usage of available system resources
+          # This will improve performance by removing CPU and memory bottlenecks
       volumes:
         - name: data-volume
           emptyDir: {} # Each pod gets its own storage
