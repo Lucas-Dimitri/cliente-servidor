@@ -33,9 +33,15 @@ fi
 # Calculate and display total number of executions
 TOTAL_SCENARIOS=$((${#SERVERS[@]} * ${#CLIENTS[@]} * ${#MESSAGES[@]} * ITERATIONS))
 echo "Total de execuções planejadas: $TOTAL_SCENARIOS"
-echo "Configurações: ${#SERVERS[@]} servidores × ${#CLIENTS[@]} clientes × ${#MESSAGES[@]} mensagens × $ITERATIONS iterações"
-echo "Tempo estimado: ~$((TOTAL_SCENARIOS * 2 / 60)) minutos (assumindo 2s por execução)"
-echo "ATENÇÃO: Este é um teste completo que pode levar várias horas!"
+echo "Configurações de servidores: ${SERVERS[*]}"
+echo "Configurações de clientes: ${CLIENTS[*]}"
+echo "Configurações de mensagens: ${MESSAGES[*]}"
+echo "Iterações: $ITERATIONS"
+echo "Cenários: ${#SERVERS[@]} × ${#CLIENTS[@]} × ${#MESSAGES[@]} × $ITERATIONS = $TOTAL_SCENARIOS execuções"
+echo "Tempo estimado: ~$((TOTAL_SCENARIOS * 15 / 60)) minutos (assumindo 15s por execução)"
+if [ "$QUICK_TEST" != "true" ]; then
+  echo "ATENÇÃO: Este é um teste completo que pode levar várias horas!"
+fi
 echo ""
 
 # Record start time for execution time calculation
