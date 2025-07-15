@@ -29,19 +29,19 @@ if command -v firefox >/dev/null 2>&1; then
     pkill firefox 2>/dev/null
     sleep 1
     
-    # Abrir Firefox com configurações específicas
+    # Abrir Firefox com todos os gráficos da pasta
     DISPLAY=:0 GDK_BACKEND=x11 MOZ_ENABLE_WAYLAND=0 \
     firefox --new-instance --no-remote \
-    "$GRAPHS_DIR/comparison_3d_interactive.html" \
-    "$GRAPHS_DIR/overlapped_3d_general.html" &
+    "$GRAPHS_DIR"/*.html &
     
-    echo "✅ Firefox iniciado! Aguarde alguns segundos..."
+    echo "✅ Firefox iniciado com TODOS os gráficos! Aguarde alguns segundos..."
     sleep 3
     
     echo "🎯 Se os gráficos não abriram, tente:"
     echo "   1. Verificar se o Firefox abriu (pode estar minimizado)"
     echo "   2. Navegar manualmente para: file://$GRAPHS_DIR/"
     echo "   3. Clicar duas vezes no arquivo .html no gerenciador de arquivos"
+    echo "   4. Os 16 gráficos devem abrir em abas separadas"
     
 else
     echo "❌ Firefox não encontrado. Tentando instalar..."
@@ -66,7 +66,12 @@ echo "   2. Navegue para: $GRAPHS_DIR"
 echo "   3. Clique duas vezes em qualquer arquivo .html"
 echo "   4. Escolha 'Abrir com Firefox' se perguntado"
 echo ""
-echo "🎯 Principais gráficos:"
+echo "🎯 Principais gráficos que devem abrir:"
 echo "   • comparison_3d_interactive.html - Comparação completa"
 echo "   • overlapped_3d_general.html - Gráficos sobrepostos"
 echo "   • interactive_3d_final.html - Análise final"
+echo "   • overlapped_3d_final.html - Análise sobreposta final"
+echo "   • interactive_3d_messages_*.html - Gráficos por número de mensagens (1, 10, 100, 500, 1000, 10000)"
+echo "   • overlapped_3d_messages_*.html - Gráficos sobrepostos por número de mensagens"
+echo ""
+echo "📊 Total: 16 gráficos interativos em abas separadas"
