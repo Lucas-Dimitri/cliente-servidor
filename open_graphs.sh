@@ -1,124 +1,77 @@
 #!/bin/bash
-# Script para abrir os gráficos HTML no navegador corretamente
-# Resolve problemas de display Wayland/X11
+# Script melhorado para abrir gráficos com resolução de problemas de display
 
-echo "🌐 Abrindo gráficos de análise no navegador..."
-echo ""
+echo "🔧 Configurando ambiente para abrir gráficos..."
 
-# Definir diretório dos gráficos
-RESULTS_DIR="/home/dimitri/Documents/cliente-servidor/analysis_results_interactive"
+# Configurar variáveis de ambiente para forçar X11
+export DISPLAY=:0
+export GDK_BACKEND=x11
+export MOZ_ENABLE_WAYLAND=0
+export XDG_SESSION_TYPE=x11
 
-# Verificar se o diretório existe
-if [ ! -d "$RESULTS_DIR" ]; then
-    echo "❌ Erro: Diretório $RESULTS_DIR não encontrado"
-    echo "Execute primeiro: python3 analyze.py interactive"
-    exit 1
+# Verificar se X11 está rodando
+if ! xset q &>/dev/null; then
+    echo "⚠️  X11 não está rodando. Tentando iniciar..."
+    startx &
+    sleep 3
 fi
 
-# Configurar variáveis de ambiente para resolver problemas de display
-export DISPLAY=:0
-export WAYLAND_DISPLAY=""
-export GDK_BACKEND=x11
-export QT_QPA_PLATFORM=xcb
+# Caminho para os gráficos
+GRAPHS_DIR="/home/dimitri/Documents/cliente-servidor/analysis_results_interactive"
 
-# Listar arquivos HTML disponíveis
-echo "📊 Gráficos disponíveis:"
-echo "1. comparison_3d_interactive.html - Comparação 3D completa"
-echo "2. interactive_3d_final.html - Análise final clientes vs mensagens"
-echo "3. interactive_3d_messages_1.html - Análise com 1 mensagem"
-echo "4. interactive_3d_messages_10.html - Análise com 10 mensagens"
-echo "5. interactive_3d_messages_100.html - Análise com 100 mensagens"
-echo "6. interactive_3d_messages_500.html - Análise com 500 mensagens"
-echo "7. overlapped_3d_general.html - Comparação sobreposta geral"
-echo "8. overlapped_3d_final.html - Comparação sobreposta final"
-echo "9. Todos os gráficos"
-echo ""
+echo "📂 Abrindo gráfico principal..."
 
-# Função para abrir arquivo no navegador
-open_browser() {
-    local file="$1"
-    local filepath="$RESULTS_DIR/$file"
+# Tentar abrir com Firefox forçando X11
+if command -v firefox >/dev/null 2>&1; then
+    echo "🚀 Iniciando Firefox com suporte X11..."
     
-    if [ -f "$filepath" ]; then
-        echo "🔗 Abrindo: $file"
-        
-        # Tentar diferentes navegadores em ordem de preferência
-        if command -v firefox >/dev/null 2>&1; then
-            GDK_BACKEND=x11 DISPLAY=:0 firefox --new-tab "file://$filepath" 2>/dev/null &
-        elif command -v google-chrome >/dev/null 2>&1; then
-            GDK_BACKEND=x11 DISPLAY=:0 google-chrome "file://$filepath" 2>/dev/null &
-        elif command -v chromium >/dev/null 2>&1; then
-            GDK_BACKEND=x11 DISPLAY=:0 chromium "file://$filepath" 2>/dev/null &
-        elif command -v xdg-open >/dev/null 2>&1; then
-            GDK_BACKEND=x11 DISPLAY=:0 xdg-open "$filepath" 2>/dev/null &
-        else
-            echo "❌ Nenhum navegador encontrado. Instale firefox, chrome ou chromium"
-            return 1
-        fi
-        
-        sleep 1
-        echo "✅ Arquivo aberto no navegador"
-    else
-        echo "❌ Arquivo não encontrado: $file"
-        return 1
-    fi
-}
+    # Matar processos Firefox existentes para evitar conflitos
+    pkill firefox 2>/dev/null
+    sleep 1
+    
+    # Abrir Firefox com todos os gráficos da pasta
+    DISPLAY=:0 GDK_BACKEND=x11 MOZ_ENABLE_WAYLAND=0 \
+    firefox --new-instance --no-remote \
+    "$GRAPHS_DIR"/*.html &
+    
+    echo "✅ Firefox iniciado com TODOS os gráficos! Aguarde alguns segundos..."
+    sleep 3
+    
+    echo "🎯 Se os gráficos não abriram, tente:"
+    echo "   1. Verificar se o Firefox abriu (pode estar minimizado)"
+    echo "   2. Navegar manualmente para: file://$GRAPHS_DIR/"
+    echo "   3. Clicar duas vezes no arquivo .html no gerenciador de arquivos"
+    echo "   4. Os 16 gráficos devem abrir em abas separadas"
+    
+else
+    echo "❌ Firefox não encontrado. Tentando instalar..."
+    sudo apt update && sudo apt install firefox-esr -y
+fi
 
-# Ler escolha do usuário
-read -p "Escolha um gráfico (1-9): " choice
-
-case $choice in
-    1)
-        open_browser "comparison_3d_interactive.html"
-        ;;
-    2)
-        open_browser "interactive_3d_final.html"
-        ;;
-    3)
-        open_browser "interactive_3d_messages_1.html"
-        ;;
-    4)
-        open_browser "interactive_3d_messages_10.html"
-        ;;
-    5)
-        open_browser "interactive_3d_messages_100.html"
-        ;;
-    6)
-        open_browser "interactive_3d_messages_500.html"
-        ;;
-    7)
-        open_browser "overlapped_3d_general.html"
-        ;;
-    8)
-        open_browser "overlapped_3d_final.html"
-        ;;
-    9)
-        echo "🚀 Abrindo todos os gráficos..."
-        for file in "$RESULTS_DIR"/*.html; do
-            if [ -f "$file" ]; then
-                filename=$(basename "$file")
-                echo "🔗 Abrindo: $filename"
-                GDK_BACKEND=x11 DISPLAY=:0 firefox --new-tab "file://$file" 2>/dev/null &
-                sleep 0.5
-            fi
-        done
-        echo "✅ Todos os gráficos foram abertos em abas separadas"
-        ;;
-    *)
-        echo "❌ Opção inválida. Use 1-9"
-        exit 1
-        ;;
-esac
+# Alternativa: abrir gerenciador de arquivos
+echo ""
+echo "💡 Alternativa: Abrindo gerenciador de arquivos na pasta dos gráficos..."
+if command -v nautilus >/dev/null 2>&1; then
+    nautilus "$GRAPHS_DIR" 2>/dev/null &
+elif command -v thunar >/dev/null 2>&1; then
+    thunar "$GRAPHS_DIR" 2>/dev/null &
+elif command -v pcmanfm >/dev/null 2>&1; then
+    pcmanfm "$GRAPHS_DIR" 2>/dev/null &
+fi
 
 echo ""
-echo "🎯 Dicas para usar os gráficos 3D:"
-echo "   • Arrastar: Rotacionar o gráfico"
-echo "   • Scroll: Zoom in/out"
-echo "   • Shift+Arrastar: Mover (pan)"
-echo "   • Hover: Ver valores detalhados"
-echo "   • Use os controles no canto superior direito"
+echo "📋 Instruções manuais:"
+echo "   1. Abra o gerenciador de arquivos"
+echo "   2. Navegue para: $GRAPHS_DIR"
+echo "   3. Clique duas vezes em qualquer arquivo .html"
+echo "   4. Escolha 'Abrir com Firefox' se perguntado"
 echo ""
-echo "📊 Se ainda tiver problemas, tente:"
-echo "   1. Reiniciar o navegador"
-echo "   2. Usar modo privado/incógnito"
-echo "   3. Verificar se JavaScript está habilitado"
+echo "🎯 Principais gráficos que devem abrir:"
+echo "   • comparison_3d_interactive.html - Comparação completa"
+echo "   • overlapped_3d_general.html - Gráficos sobrepostos"
+echo "   • interactive_3d_final.html - Análise final"
+echo "   • overlapped_3d_final.html - Análise sobreposta final"
+echo "   • interactive_3d_messages_*.html - Gráficos por número de mensagens (1, 10, 100, 500, 1000, 10000)"
+echo "   • overlapped_3d_messages_*.html - Gráficos sobrepostos por número de mensagens"
+echo ""
+echo "📊 Total: 16 gráficos interativos em abas separadas"
