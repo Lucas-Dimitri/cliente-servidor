@@ -29,17 +29,25 @@ else
 fi
 
 # Calculate and display total number of executions
+# Total de cenários (combinações de configuração)
 TOTAL_SCENARIOS=$((${#SERVERS[@]} * ${#CLIENTS[@]} * ${#MESSAGES[@]} * ITERATIONS))
-echo "Total de execuções planejadas: $TOTAL_SCENARIOS (OTIMIZADO: ${ITERATIONS} iterações)"
+
+# Calculation of total executions
+TOTAL_CLIENTS=0
+for client_count in "${CLIENTS[@]}"; do
+  TOTAL_CLIENTS=$((TOTAL_CLIENTS + client_count))
+done
+TOTAL_EXECUTIONS=$((${#SERVERS[@]} * TOTAL_CLIENTS * ${#MESSAGES[@]} * ITERATIONS))
+
+# echoes the configuration details
+echo "Total de cenários: $TOTAL_SCENARIOS combinações de configuração"
+echo "Total de execuções (linhas de dados): $TOTAL_EXECUTIONS (cada cliente gera uma linha)"
 echo "Configurações de servidores: ${SERVERS[*]}"
-echo "Configurações de clientes: ${CLIENTS[*]}"
+echo "Configurações de clientes: ${CLIENTS[*]} (soma: $TOTAL_CLIENTS)"
 echo "Configurações de mensagens: ${MESSAGES[*]}"
 echo "Iterações: $ITERATIONS"
-echo "Cenários: ${#SERVERS[@]} × ${#CLIENTS[@]} × ${#MESSAGES[@]} × $ITERATIONS = $TOTAL_SCENARIOS execuções"
-echo "Tempo estimado: ~$((TOTAL_SCENARIOS * 9 / 60)) minutos (assumindo 5s por execução otimizada)"
-if [ "$QUICK_TEST" != "true" ]; then
-  echo "OTIMIZAÇÃO: Reduzido de 3000 para $TOTAL_SCENARIOS execuções ($(( (3000 - TOTAL_SCENARIOS) * 100 / 3000 ))% redução)"
-fi
+echo "Cálculo: ${#SERVERS[@]} servidores × $TOTAL_CLIENTS clientes × ${#MESSAGES[@]} mensagens × $ITERATIONS iterações = $TOTAL_EXECUTIONS linhas"
+echo "Tempo estimado: ~$((TOTAL_SCENARIOS * 9 / 60)) minutos (baseado em $TOTAL_SCENARIOS cenários)"
 echo ""
 
 # Record start time for execution time calculation
@@ -233,16 +241,17 @@ for servers in "${SERVERS[@]}"; do
         # OPTIMIZATION 11: Verificação inteligente de persistência ao invés de sleep fixo
         echo "Verificando se dados foram persistidos..."
         data_ready=false
-        for attempt in {1..5}; do
+        for attempt in {1..10}; do
           # Verificar se pelo menos um pod tem dados no CSV
           for pod in "${pod_names[@]}"; do
             if [[ "$SERVER_TYPE" == "go" ]]; then
-              line_count=$(kubectl exec "$pod" -- sh -c "wc -l < /data/requests.csv 2>/dev/null || echo 0" 2>/dev/null)
+              line_count=$(kubectl exec "$pod" -- sh -c "wc -l < /data/requests.csv 2>/dev/null || echo 0" 2>/dev/null | tr -d ' \t\n\r')
             else
-              line_count=$(kubectl exec "$pod" -- bash -c "wc -l < /data/requests.csv 2>/dev/null || echo 0" 2>/dev/null)
+              line_count=$(kubectl exec "$pod" -- bash -c "wc -l < /data/requests.csv 2>/dev/null || echo 0" 2>/dev/null | tr -d ' \t\n\r')
             fi
             
-            if [ "$line_count" -gt 1 ]; then  # Mais que apenas o header
+            # Garantir que line_count é um número válido
+            if [[ "$line_count" =~ ^[0-9]+$ ]] && [ "$line_count" -gt 1 ]; then  # Mais que apenas o header
               data_ready=true
               break
             fi
@@ -253,8 +262,8 @@ for servers in "${SERVERS[@]}"; do
             break
           fi
           
-          echo "Tentativa $attempt/5: Aguardando persistência..."
-          sleep 0.2
+          echo "Tentativa $attempt/10: Aguardando persistência..."
+          sleep 0.1
         done
 
         # Collect data
