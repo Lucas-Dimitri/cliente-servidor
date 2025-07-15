@@ -113,7 +113,7 @@ function collect_data_from_pods() {
       if [[ "$language" == "go" ]]; then
         kubectl exec "$pod" -- sh -c "ls -la /data/" 2>/dev/null >&2 || echo "  ✗ Não conseguiu listar /data/ no pod $pod" >&2
       else
-        kubectl exec "$pod" -- ls -la /data/ 2>/dev/null >&2 || echo "  ✗ Não conseguiu listar /data/ no pod $pod" >&2
+        kubectl exec "$pod" -- bash -c "ls -la /data/" 2>/dev/null >&2 || echo "  ✗ Não conseguiu listar /data/ no pod $pod" >&2
       fi
     fi
     
@@ -236,9 +236,11 @@ for servers in "${SERVERS[@]}"; do
           
         # Limpar arquivo de requests antes do teste para evitar duplicações
         for pod in $(kubectl get pods -l app="$DEPLOYMENT_NAME" -o jsonpath='{.items[*].metadata.name}'); do
-          # Go server automatically initializes CSV, so we only need to do this for Python
-          if [[ "$LANGUAGE" == "python" ]]; then
+          # Limpar CSV para ambos Python e Go
+          if [[ "$SERVER_TYPE" == "python" ]]; then
             kubectl exec "$pod" -- bash -c 'echo "client_id,message_id,server_id,client_send_time,server_processing_time,client_receive_time,response_time,num_servers,num_clients,num_messages" > /data/requests.csv' 2>/dev/null || echo "Aviso: Não foi possível inicializar CSV no pod $pod"
+          elif [[ "$SERVER_TYPE" == "go" ]]; then
+            kubectl exec "$pod" -- sh -c 'echo "client_id,message_id,server_id,client_send_time,server_processing_time,client_receive_time,response_time,num_servers,num_clients,num_messages" > /data/requests.csv' 2>/dev/null || echo "Aviso: Não foi possível inicializar CSV no pod $pod"
           fi
         done
       
@@ -277,14 +279,14 @@ for servers in "${SERVERS[@]}"; do
       available_pod=$(kubectl get pods -l app="$DEPLOYMENT_NAME" --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
       if [ -n "$available_pod" ]; then
         # Use appropriate shell for each container type
-        if [[ "$LANGUAGE" == "go" ]]; then
+        if [[ "$SERVER_TYPE" == "go" ]]; then
           kubectl exec "$available_pod" -- sh -c "ls -la /data/" 2>/dev/null || echo "Não foi possível listar arquivos no pod"
         else
           kubectl exec "$available_pod" -- bash -c "ls -la /data/" 2>/dev/null || echo "Não foi possível listar arquivos no pod"
         fi
       fi
       
-      temp_file=$(collect_data_from_pods "$DEPLOYMENT_NAME" "$TIMESTAMP" "$LANGUAGE")
+      temp_file=$(collect_data_from_pods "$DEPLOYMENT_NAME" "$TIMESTAMP" "$SERVER_TYPE")
       
       # Process and append results
       if [ -s "$temp_file" ]; then
