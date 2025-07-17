@@ -144,10 +144,6 @@ func parseString(value interface{}) string {
 func handler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	// Set keep-alive headers for TCP pipelining
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Keep-Alive", "timeout=30, max=1000")
-
 	// Extract request data
 	var clientID, messageID string
 	var clientSendTime float64
@@ -185,8 +181,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Simulate work - reduced for pipelining efficiency  
-	time.Sleep(500 * time.Microsecond) // 0.5ms for faster pipelining
+	// Simulate work
+	time.Sleep(1 * time.Millisecond)
 
 	serverProcessingTime := time.Since(start).Seconds()
 
@@ -201,17 +197,8 @@ func main() {
 	// Initialize logging
 	initCSV()
 
-	// Create HTTP server with optimized settings for pipelining
-	server := &http.Server{
-		Addr:           ":5000",
-		Handler:        http.HandlerFunc(handler),
-		ReadTimeout:    30 * time.Second,
-		WriteTimeout:   30 * time.Second,
-		IdleTimeout:    120 * time.Second, // Extended for keep-alive
-		MaxHeaderBytes: 1 << 20,
-	}
-
 	// Start server
-	log.Println("Starting optimized server with TCP pipelining support on :5000")
-	log.Fatal(server.ListenAndServe())
+	http.HandleFunc("/", handler)
+	log.Println("Starting server on :5000")
+	log.Fatal(http.ListenAndServe(":5000", nil))
 }
