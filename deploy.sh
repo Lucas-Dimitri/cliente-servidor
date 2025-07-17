@@ -61,17 +61,33 @@ echo "client_id,message_id,server_id,client_send_time,server_processing_time,cli
 function wait_for_pods_ready() {
   local deployment_name=$1
   local expected_count=$2
-  local max_wait=${3:-60}  # Reduced default wait time
+  local max_wait=${3:-60}
+  local max_attempts=3
+  local attempt=1
   
-  echo "Aguardando $expected_count pods ficarem prontos..."
-  if kubectl wait --for=condition=ready pod -l app="$deployment_name" --timeout=${max_wait}s > /dev/null 2>&1; then
-    local current_count=$(kubectl get pods -l app="$deployment_name" --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
-    echo "Todos os $expected_count pods estão prontos (contagem atual: $current_count)."
-    return 0
-  else
-    echo "Erro: Nem todos os pods ficaram prontos no tempo esperado."
-    return 1
-  fi
+  while [ $attempt -le $max_attempts ]; do
+    echo "Aguardando $expected_count pods ficarem prontos... (tentativa $attempt/$max_attempts)"
+    
+    if kubectl wait --for=condition=ready pod -l app="$deployment_name" --timeout=${max_wait}s > /dev/null 2>&1; then
+      local current_count=$(kubectl get pods -l app="$deployment_name" --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
+      echo "✅ Todos os $expected_count pods estão prontos (contagem atual: $current_count)."
+      return 0
+    else
+      echo "⚠️  Tentativa $attempt falhou. Verificando status dos pods..."
+      kubectl get pods -l app="$deployment_name" --no-headers 2>/dev/null | while read pod status ready restarts age; do
+        echo "  Pod: $pod | Status: $status | Ready: $ready"
+      done
+      
+      if [ $attempt -lt $max_attempts ]; then
+        echo "🔄 Tentando novamente em 5 segundos..."
+        sleep 2
+        attempt=$((attempt + 1))
+      else
+        echo "❌ Todas as tentativas falharam. Nem todos os pods ficaram prontos."
+        return 1
+      fi
+    fi
+  done
 }
 
 # OPTIMIZATION 3: Streamlined data collection function
