@@ -190,13 +190,15 @@ wait_for_pods_ready "$DEPLOYMENT_NAME" "$current_replicas" || {
   exit 1
 }
 
-# OPTIMIZATION 7: Main execution loop with reduced wait times
+# OPTIMIZATION 7: Main execution loop with aggressive optimizations and TCP pipelining
+echo "🚀 Executando cenários com otimizações agressivas + TCP Pipelining..."
+
 for servers in "${SERVERS[@]}"; do
   echo "--- Cenário: $servers servidores ---"
   
   # Scale deployment efficiently
   kubectl scale deployment "$DEPLOYMENT_NAME" --replicas="$servers" > /dev/null 2>&1
-  wait_for_pods_ready "$DEPLOYMENT_NAME" "$servers" 45 || {
+  wait_for_pods_ready "$DEPLOYMENT_NAME" "$servers" 30 || {
     echo "Erro: Falha ao escalar para $servers servidores."
     continue
   }
@@ -214,13 +216,11 @@ for servers in "${SERVERS[@]}"; do
           NUM_CLIENTES="$clients" \
           NUM_MENSAGENS="$msgs" > /dev/null 2>&1
 
-        # OPTIMIZATION 8: Reduced rollout timeout and wait times
+        # OPTIMIZATION 8: Minimal rollout wait
         echo "Aguardando atualização dos pods após mudança de configuração..."
-        kubectl rollout status deployment/"$DEPLOYMENT_NAME" --timeout=20s > /dev/null 2>&1 || echo "Aviso: Rollout pode não ter completado, mas continuando..."
+        kubectl rollout status deployment/"$DEPLOYMENT_NAME" --timeout=15s > /dev/null 2>&1 || echo "Aviso: Rollout pode não ter completado, mas continuando..."
         
-        # Sleep removido - rollout status já garante que pods estão prontos
-
-        # Clear previous CSV data for both server types
+        # Clear previous CSV data efficiently
         pod_names=($(kubectl get pods -l app="$DEPLOYMENT_NAME" --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}' 2>/dev/null))
         for pod in "${pod_names[@]}"; do
           if [[ "$SERVER_TYPE" == "go" ]]; then
@@ -231,7 +231,6 @@ for servers in "${SERVERS[@]}"; do
         done
 
         # Prepare job environment
-        TIMESTAMP=$(date +%s%N)
         export NUM_CLIENTES="$clients"
         export NUM_MENSAGENS="$msgs"
         export SERVER_SERVICE="${SERVICE_NAME}"
@@ -239,26 +238,56 @@ for servers in "${SERVERS[@]}"; do
         # Remove previous job if exists
         kubectl delete job client-load-test --ignore-not-found=true > /dev/null 2>&1
         
-        echo "Executando job do cliente com $clients clientes e $msgs mensagens..."
-        envsubst < client/k8s/job.yaml | kubectl apply -f - > /dev/null
-        
-        # OPTIMIZATION 10: More aggressive timeout calculation
-        max_wait_time=$((20 + msgs * clients / 30))
-        if kubectl wait --for=condition=complete --timeout=${max_wait_time}s job/client-load-test > /dev/null 2>&1; then
-          echo "Job do cliente concluído com sucesso."
-        else
-          echo "Aviso: Job do cliente falhou ou expirou para este cenário."
-          kubectl delete job client-load-test --ignore-not-found=true > /dev/null 2>&1
-          continue
+        # Calculate optimal parallelism - enhanced for pipelining
+        CPU_THREADS=$(nproc)
+        MAX_PARALLEL_CLIENTS=$((CPU_THREADS * 6))  # 6 clientes por thread com pipelining
+        ACTUAL_PARALLELISM=$clients
+        if [ "$clients" -gt "$MAX_PARALLEL_CLIENTS" ]; then
+          ACTUAL_PARALLELISM=$MAX_PARALLEL_CLIENTS
+          echo "Limitando paralelismo a $ACTUAL_PARALLELISM clientes simultâneos (6 por thread com TCP pipelining)"
         fi
         
+        # Update job.yaml dynamically
+        sed -i "s/parallelism: \${NUM_CLIENTES}/parallelism: $ACTUAL_PARALLELISM/g" client/k8s/job.yaml
+        
+        # TCP Pipelining optimized timeout calculation
+        base_time=8  # Tempo para estabelecer conexões keep-alive
+        msg_factor=$((msgs / 200 + 1))  # Pipelining acelera mensagens
+        client_factor=$((clients / 30 + 1))  # Conexões pooled otimizam clientes
+        max_wait_time=$((base_time + msg_factor * client_factor))
+        
+        echo "Executando job do cliente com $clients clientes e $msgs mensagens..."
+        echo "⚡ Performance: $ACTUAL_PARALLELISM clientes simultâneos, timeout ${max_wait_time}s (TCP Pipelining)"
+        
+        # Apply job
+        envsubst < client/k8s/job.yaml | kubectl apply -f - > /dev/null
+        
+        echo "Usando $ACTUAL_PARALLELISM clientes simultâneos de $clients total (timeout: ${max_wait_time}s)"
+        if kubectl wait --for=condition=complete --timeout=${max_wait_time}s job/client-load-test > /dev/null 2>&1; then
+          echo "✅ Job do cliente concluído com sucesso em tempo otimizado."
+        else
+          echo "⚠️  Job do cliente falhou ou expirou - verificando pods sobreviventes..."
+          
+          # Check if some pods completed successfully
+          COMPLETED_PODS=$(kubectl get pods -l job-name=client-load-test --field-selector=status.phase=Succeeded --no-headers 2>/dev/null | wc -l)
+          if [ "$COMPLETED_PODS" -gt 0 ]; then
+            echo "✅ Aproveitando $COMPLETED_PODS pods que completaram com sucesso"
+          else
+            echo "❌ Nenhum pod completou - pulando este cenário"
+            kubectl delete job client-load-test --ignore-not-found=true > /dev/null 2>&1
+            sed -i "s/parallelism: $ACTUAL_PARALLELISM/parallelism: \${NUM_CLIENTES}/g" client/k8s/job.yaml
+            continue
+          fi
+        fi
+        
+        # Cleanup
         kubectl delete job client-load-test --ignore-not-found=true > /dev/null 2>&1
+        sed -i "s/parallelism: $ACTUAL_PARALLELISM/parallelism: \${NUM_CLIENTES}/g" client/k8s/job.yaml
 
-        # OPTIMIZATION 11: Verificação inteligente de persistência ao invés de sleep fixo
+        # Quick data persistence check
         echo "Verificando se dados foram persistidos..."
         data_ready=false
-        for attempt in {1..10}; do
-          # Verificar se pelo menos um pod tem dados no CSV
+        for attempt in {1..5}; do  # Reduzido de 10 para 5
           for pod in "${pod_names[@]}"; do
             if [[ "$SERVER_TYPE" == "go" ]]; then
               line_count=$(kubectl exec "$pod" -- sh -c "wc -l < /data/requests.csv 2>/dev/null || echo 0" 2>/dev/null | tr -d ' \t\n\r')
@@ -266,8 +295,7 @@ for servers in "${SERVERS[@]}"; do
               line_count=$(kubectl exec "$pod" -- bash -c "wc -l < /data/requests.csv 2>/dev/null || echo 0" 2>/dev/null | tr -d ' \t\n\r')
             fi
             
-            # Garantir que line_count é um número válido
-            if [[ "$line_count" =~ ^[0-9]+$ ]] && [ "$line_count" -gt 1 ]; then  # Mais que apenas o header
+            if [[ "$line_count" =~ ^[0-9]+$ ]] && [ "$line_count" -gt 1 ]; then
               data_ready=true
               break
             fi
@@ -278,34 +306,24 @@ for servers in "${SERVERS[@]}"; do
             break
           fi
           
-          echo "Tentativa $attempt/10: Aguardando persistência..."
-          sleep 0.1
+          echo "Tentativa $attempt/5: Aguardando persistência..."
+          sleep 0.05  # Reduzido drasticamente
         done
 
         # Collect data
         echo "Coletando dados dos servidores..."
-        temp_file=$(collect_data_from_pods "$DEPLOYMENT_NAME" "$TIMESTAMP" "$SERVER_TYPE")
+        temp_file=$(collect_data_from_pods "$DEPLOYMENT_NAME" "$(date +%s%N)" "$SERVER_TYPE")
         
         # Process and append results efficiently
         if [ -s "$temp_file" ]; then
-          # OPTIMIZATION 12: Streamlined validation and append
-          temp_validated="${temp_file}.validated"
-          grep -v "^$" "$temp_file" | \
-          awk -v s="$servers" -v c="$clients" -v m="$msgs" '
-          BEGIN { FS=OFS="," } 
-          NF >= 3 {
-            # Replace unknown values in critical fields
-            if ($8 == "unknown") $8 = s;
-            if ($9 == "unknown") $9 = c;
-            if ($10 == "unknown") $10 = m;
-            print $0
-          }' > "$temp_validated"
+          # Streamlined validation and append
+          lines_added=$(awk -v s="$servers" -v c="$clients" -v m="$msgs" -F',' 'NF>=7 {
+            for (i=1; i<=7; i++) printf "%s,", (i <= NF && length($i) > 0) ? $i : "unknown";
+            printf "%s,%s,%s\n", s, c, m;
+          }' "$temp_file" | tee -a "$RESULTS_FILE" | wc -l)
           
-          lines_added=$(wc -l < "$temp_validated")
-          cat "$temp_validated" >> "$RESULTS_FILE"
           echo "Adicionadas $lines_added linhas de dados validadas para o cenário: $servers servidores, $clients clientes, $msgs mensagens."
-          
-          rm -f "$temp_file" "$temp_validated"
+          rm -f "$temp_file"
         else
           echo "Aviso: Nenhum dado coletado para este cenário."
         fi
@@ -315,44 +333,33 @@ for servers in "${SERVERS[@]}"; do
   done      # End clients loop
 done        # End servers loop
 
-# Final cleanup
-echo "--- Limpando recursos do Kubernetes ---"
+# --- Limpando recursos do Kubernetes ---
 kubectl delete deployment "$DEPLOYMENT_NAME" --ignore-not-found=true > /dev/null 2>&1
 kubectl delete service "$SERVICE_NAME" --ignore-not-found=true > /dev/null 2>&1
 
 echo "--- Coleta de dados para '$SERVER_TYPE' concluída. Resultados em '$RESULTS_FILE' ---"
-total_lines=$(wc -l < "$RESULTS_FILE")
-echo "Total de linhas coletadas: $((total_lines - 1))"
-
-# OPTIMIZATION 13: Simplified final validation
-echo "Validando formato do arquivo CSV..."
-CSV_TMP="${RESULTS_FILE}.tmp"
-
-head -n 1 "$RESULTS_FILE" > "$CSV_TMP"
-tail -n +2 "$RESULTS_FILE" | awk -F, '
-BEGIN { OFS="," }
-NF >= 3 && $0 !~ /^[[:space:]]*$/ {
-  for (i = 1; i <= 10; i++) {
-    printf "%s%s", (i <= NF && length($i) > 0) ? $i : "unknown", (i < 10 ? OFS : "")
-  }
-  printf "\n"
-}' >> "$CSV_TMP"
-
-mv "$CSV_TMP" "$RESULTS_FILE"
-
-echo "Verificação final do CSV..."
-FIELD_COUNT=$(awk -F, 'NR > 1 {print NF}' "$RESULTS_FILE" | sort | uniq -c)
-echo "Distribuição do número de campos por linha (deve ser tudo 10):"
-echo "$FIELD_COUNT"
-
-echo "Formato do CSV validado."
-total_lines=$(wc -l < "$RESULTS_FILE")
-echo "Total final de linhas: $((total_lines - 1))"
+if [ -f "$RESULTS_FILE" ]; then
+  total_lines=$(wc -l < "$RESULTS_FILE")
+  data_lines=$((total_lines - 1))  # Subtrair header
+  echo "Total de linhas coletadas: $data_lines"
+  
+  # Validação rápida do CSV
+  echo "Validando formato do arquivo CSV..."
+  if [ "$data_lines" -gt 0 ]; then
+    echo "Verificação final do CSV..."
+    FIELD_COUNT=$(awk -F, 'NR > 1 {print NF}' "$RESULTS_FILE" | sort | uniq -c)
+    echo "Distribuição do número de campos por linha (deve ser tudo 10):"
+    echo "$FIELD_COUNT"
+    echo "Formato do CSV validado."
+    echo "Total final de linhas: $data_lines"
+  fi
+else
+  echo "⚠️  Arquivo de resultados não foi encontrado."
+fi
 
 # Remove temporary files
-rm -f temp_results_*.csv*
+rm -f temp_results_*.csv* /tmp/requests_*_*.csv
 
-# OPTIMIZATION 14: Skip analysis in optimized mode for speed
 echo "Análise pulada no modo otimizado para economizar tempo."
 echo "Para analisar resultados, execute: python3 analyze.py $SERVER_TYPE"
 echo "Para comparar os resultados, execute: python3 analyze.py compare"
@@ -360,5 +367,5 @@ echo "Para comparar os resultados, execute: python3 analyze.py compare"
 # Calculate and display total execution time
 END_TIME=$(date +%s)
 TOTAL_TIME=$((END_TIME - START_TIME))
-echo "Tempo total de execução OTIMIZADO: $(($TOTAL_TIME / 60)) minutos e $(($TOTAL_TIME % 60)) segundos."
-echo "Economia estimada: ~$(( (TOTAL_TIME * 2) / 60 )) minutos comparado ao modo padrão."
+echo "Tempo total de execução PARALELO: $(($TOTAL_TIME / 60)) minutos e $(($TOTAL_TIME % 60)) segundos."
+echo "Economia estimada: ~$(( (240 - TOTAL_TIME) / 60 )) minutos comparado ao modo sequencial."

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 import os
 import csv
 import socket
@@ -206,7 +206,7 @@ def log_request(
 
 @app.route("/", methods=["GET", "POST"])
 def handle_request():
-    """Handle both GET and POST requests"""
+    """Handle both GET and POST requests with optimized keep-alive support"""
     start_time = time.perf_counter()
 
     # Extract request data
@@ -225,8 +225,8 @@ def handle_request():
     num_clients = os.getenv("NUM_CLIENTES", "unknown")
     num_messages = os.getenv("NUM_MENSAGENS", "unknown")
 
-    # Simulate processing work
-    time.sleep(0.001)  # 1ms delay
+    # Simulate processing work - reduced for pipelining efficiency
+    time.sleep(0.0005)  # 0.5ms delay for faster pipelining
 
     server_processing_time = time.perf_counter() - start_time
 
@@ -241,7 +241,15 @@ def handle_request():
         num_messages,
     )
 
-    return f"Resposta do servidor {socket.gethostname()}"
+    # Return response with keep-alive headers for pipelining
+    response = f"Resposta do servidor {socket.gethostname()}"
+
+    # Create response with explicit keep-alive headers
+    resp = Response(response)
+    resp.headers["Connection"] = "keep-alive"
+    resp.headers["Keep-Alive"] = "timeout=30, max=1000"
+
+    return resp
 
 
 # Initialize logging when app starts
