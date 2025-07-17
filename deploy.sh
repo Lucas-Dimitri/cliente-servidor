@@ -57,7 +57,7 @@ START_TIME=$(date +%s)
 > "$RESULTS_FILE"
 echo "client_id,message_id,server_id,client_send_time,server_processing_time,client_receive_time,response_time,num_servers,num_clients,num_messages" > "$RESULTS_FILE"
 
-# OPTIMIZATION 2: Parallel-ready function for data collection
+# OPTIMIZATION 2: Resilient function for pod readiness with retry logic
 function wait_for_pods_ready() {
   local deployment_name=$1
   local expected_count=$2
