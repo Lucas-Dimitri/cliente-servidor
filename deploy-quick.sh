@@ -15,7 +15,7 @@ echo "--- Executando testes RÁPIDOS para o servidor: $SERVER_TYPE ---"
 
 # Configurations that will be exported to the main deploy script
 export QUICK_TEST=true
-export SERVERS_CONFIG="2"
+export SERVERS_CONFIG="2 10"
 export CLIENTS_CONFIG="10 20 30 40 50 60 70 80 90 100"
 export MESSAGES_CONFIG="1 10 100 500 1000"
 export ITERATIONS_CONFIG="1"

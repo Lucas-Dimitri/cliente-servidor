@@ -23,25 +23,30 @@ echo "📂 Abrindo gráfico principal..."
 
 # Tentar abrir com Firefox forçando X11
 if command -v firefox >/dev/null 2>&1; then
-    echo "🚀 Iniciando Firefox com suporte X11..."
+    echo "🚀 Abrindo gráficos no Firefox (mantendo abas existentes)..."
     
-    # Matar processos Firefox existentes para evitar conflitos
-    pkill firefox 2>/dev/null
-    sleep 1
+    # NÃO matar processos Firefox existentes para preservar suas abas
+    # Verificar se Firefox já está rodando
+    if pgrep firefox >/dev/null; then
+        echo "✅ Firefox já está rodando - abrindo em nova janela..."
+        # Usar --new-window para abrir em nova janela sem fechar abas existentes
+        DISPLAY=:0 GDK_BACKEND=x11 MOZ_ENABLE_WAYLAND=0 \
+        firefox --new-window "$GRAPHS_DIR"/*.html &
+    else
+        echo "🚀 Iniciando nova instância do Firefox..."
+        # Abrir Firefox com todos os gráficos da pasta
+        DISPLAY=:0 GDK_BACKEND=x11 MOZ_ENABLE_WAYLAND=0 \
+        firefox "$GRAPHS_DIR"/*.html &
+    fi
     
-    # Abrir Firefox com todos os gráficos da pasta
-    DISPLAY=:0 GDK_BACKEND=x11 MOZ_ENABLE_WAYLAND=0 \
-    firefox --new-instance --no-remote \
-    "$GRAPHS_DIR"/*.html &
-    
-    echo "✅ Firefox iniciado com TODOS os gráficos! Aguarde alguns segundos..."
+    echo "✅ Gráficos sendo abertos no Firefox! Aguarde alguns segundos..."
     sleep 3
     
     echo "🎯 Se os gráficos não abriram, tente:"
     echo "   1. Verificar se o Firefox abriu (pode estar minimizado)"
     echo "   2. Navegar manualmente para: file://$GRAPHS_DIR/"
     echo "   3. Clicar duas vezes no arquivo .html no gerenciador de arquivos"
-    echo "   4. Os 16 gráficos devem abrir em abas separadas"
+    echo "   4. Os gráficos devem abrir em abas/janela nova"
     
 else
     echo "❌ Firefox não encontrado. Tentando instalar..."
