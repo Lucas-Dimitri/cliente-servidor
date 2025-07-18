@@ -1,14 +1,14 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
+	"net"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -17,10 +17,51 @@ var (
 	csvLock sync.Mutex
 )
 
-type RequestData struct {
-	ClientID       interface{} `json:"client_id"`
-	MessageID      interface{} `json:"message_id"`
-	ClientSendTime interface{} `json:"client_send_time"`
+// Helper function to convert interface{} to string
+func interfaceToString(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case int:
+		return fmt.Sprintf("%d", val)
+	case int64:
+		return fmt.Sprintf("%d", val)
+	case float64:
+		return fmt.Sprintf("%.0f", val)
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+// Protocol constants
+const (
+	MAGIC_NUMBER         = 0x12345678
+	MSG_CLIENT_REQUEST   = 1
+	MSG_SERVER_RESPONSE  = 2
+	MSG_CLOSE_CONNECTION = 4
+)
+
+// Message structure
+type Message struct {
+	MagicNumber uint32          `json:"magic_number"`
+	MsgType     uint32          `json:"msg_type"`
+	Payload     json.RawMessage `json:"payload"`
+}
+
+// Payload for MSG_CLIENT_REQUEST
+type MessagePayload struct {
+	ClientID  string      `json:"client_id"`
+	MessageID interface{} `json:"message_id"` // Accept both string and number
+	Timestamp float64     `json:"timestamp"`
+	Data      string      `json:"data"`
+}
+
+// Response structure
+type ResponsePayload struct {
+	Status           string  `json:"status"`
+	ServerID         string  `json:"server_id"`
+	ProcessingTime   float64 `json:"processing_time"` // Match client expectation
+	ResponseMessage  string  `json:"response_message"`
 }
 
 func getCSVPath() string {
@@ -115,90 +156,153 @@ func hostname() string {
 	return name
 }
 
-func parseFloat(value interface{}) float64 {
-	switch v := value.(type) {
-	case float64:
-		return v
-	case string:
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			return f
-		}
-	case int:
-		return float64(v)
-	}
-	return 0.0
-}
+// Handle individual client connection
+func handleClient(conn net.Conn) {
+	defer conn.Close()
+	clientAddr := conn.RemoteAddr().String()
+	log.Printf("Cliente conectado: %s", clientAddr)
 
-func parseString(value interface{}) string {
-	switch v := value.(type) {
-	case string:
-		return v
-	case int:
-		return strconv.Itoa(v)
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	}
-	return "unknown"
-}
+	// Session statistics
+	var clientID string
+	messagesProcessed := 0
+	totalProcessingTime := 0.0
+	var firstMessageTime float64
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
-	// Extract request data
-	var clientID, messageID string
-	var clientSendTime float64
-
-	if r.Method == "POST" {
-		body, err := io.ReadAll(r.Body)
-		if err == nil {
-			var data RequestData
-			if json.Unmarshal(body, &data) == nil {
-				clientID = parseString(data.ClientID)
-				messageID = parseString(data.MessageID)
-				clientSendTime = parseFloat(data.ClientSendTime)
+	for {
+		// Read protocol header (12 bytes: magic + type + length)
+		headerBuf := make([]byte, 12)
+		log.Printf("🔍 Aguardando header do cliente %s...", clientAddr)
+		_, err := io.ReadFull(conn, headerBuf)
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("❌ Erro lendo header do cliente %s: %v", clientAddr, err)
+			} else {
+				log.Printf("📤 Cliente %s fechou conexão (EOF)", clientAddr)
 			}
+			break
+		}
+
+		// Parse header: magic (4 bytes), type (4 bytes), length (4 bytes)
+		magic := binary.BigEndian.Uint32(headerBuf[0:4])
+		msgType := binary.BigEndian.Uint32(headerBuf[4:8])
+		payloadLength := binary.BigEndian.Uint32(headerBuf[8:12])
+
+		log.Printf("🔍 Header recebido - Magic: 0x%x, Type: %d, Length: %d", magic, msgType, payloadLength)
+
+		// Validate magic number
+		if magic != MAGIC_NUMBER {
+			log.Printf("❌ Magic number inválido: 0x%x (esperado: 0x%x)", magic, MAGIC_NUMBER)
+			break
+		}
+
+		if payloadLength == 0 || payloadLength > 1024*1024 { // Limite de 1MB
+			log.Printf("❌ Tamanho de payload inválido: %d", payloadLength)
+			break
+		}
+
+		// Read the payload
+		payloadBuf := make([]byte, payloadLength)
+		log.Printf("🔍 Lendo payload de %d bytes...", payloadLength)
+		_, err = io.ReadFull(conn, payloadBuf)
+		if err != nil {
+			log.Printf("❌ Erro lendo payload: %v", err)
+			break
+		}
+
+		log.Printf("✅ Payload recebido: %s", string(payloadBuf))
+
+		start := time.Now()
+
+		if msgType == MSG_CLIENT_REQUEST {
+			// Parse message payload
+			var payload MessagePayload
+			if err := json.Unmarshal(payloadBuf, &payload); err != nil {
+				log.Printf("Erro parsing payload: %v", err)
+				continue
+			}
+
+			// Simulate work
+			time.Sleep(1 * time.Millisecond)
+
+			serverProcessingTime := time.Since(start).Seconds()
+
+			// Update session statistics
+			if clientID == "" {
+				clientID = payload.ClientID
+				firstMessageTime = payload.Timestamp
+			}
+
+			messagesProcessed++
+			totalProcessingTime += serverProcessingTime
+
+			// Create response
+			response := ResponsePayload{
+				Status:          "success",
+				ServerID:        hostname(),
+				ProcessingTime:  serverProcessingTime, // Fixed field name
+				ResponseMessage: fmt.Sprintf("Resposta do servidor %s", hostname()),
+			}
+
+			responseBytes, err := json.Marshal(response)
+			if err != nil {
+				log.Printf("Erro criando resposta: %v", err)
+				continue
+			}
+
+			// Send response with protocol header
+			responseLength := uint32(len(responseBytes))
+			responseHeader := make([]byte, 12)
+			binary.BigEndian.PutUint32(responseHeader[0:4], MAGIC_NUMBER)
+			binary.BigEndian.PutUint32(responseHeader[4:8], MSG_SERVER_RESPONSE) // Correct response type
+			binary.BigEndian.PutUint32(responseHeader[8:12], responseLength)
+
+			if _, err := conn.Write(responseHeader); err != nil {
+				log.Printf("Erro enviando header da resposta: %v", err)
+				break
+			}
+
+			if _, err := conn.Write(responseBytes); err != nil {
+				log.Printf("Erro enviando resposta: %v", err)
+				break
+			}
+
+		} else if msgType == MSG_CLOSE_CONNECTION {
+			log.Printf("Cliente %s solicitou fechamento da conexão", clientAddr)
+			break
 		}
 	}
 
-	// Fallback for GET requests or malformed POST
-	if clientID == "" {
-		clientID = r.URL.Query().Get("client_id")
-		if clientID == "" {
-			clientID = "unknown"
-		}
-	}
-	if messageID == "" {
-		messageID = r.URL.Query().Get("message_id")
-		if messageID == "" {
-			messageID = "unknown"
-		}
-	}
-	if clientSendTime == 0 {
-		if sendTimeStr := r.URL.Query().Get("client_send_time"); sendTimeStr != "" {
-			clientSendTime = parseFloat(sendTimeStr)
-		} else {
-			clientSendTime = float64(time.Now().UnixNano()) / 1e9
-		}
+	// Log consolidated session data only once
+	if clientID != "" && messagesProcessed > 0 {
+		avgProcessingTime := totalProcessingTime / float64(messagesProcessed)
+		logRequest(clientID, fmt.Sprintf("%d", messagesProcessed), firstMessageTime, avgProcessingTime)
 	}
 
-	// Simulate work
-	time.Sleep(1 * time.Millisecond)
-
-	serverProcessingTime := time.Since(start).Seconds()
-
-	// Write response
-	fmt.Fprintf(w, "Resposta do servidor %s", hostname())
-
-	// Log request
-	logRequest(clientID, messageID, clientSendTime, serverProcessingTime)
+	log.Printf("Cliente %s desconectado", clientAddr)
 }
 
 func main() {
 	// Initialize logging
 	initCSV()
 
-	// Start server
-	http.HandleFunc("/", handler)
-	log.Println("Starting server on :5000")
-	log.Fatal(http.ListenAndServe(":5000", nil))
+	// Start TCP server
+	listener, err := net.Listen("tcp", ":5000")
+	if err != nil {
+		log.Fatalf("Erro iniciando servidor TCP: %v", err)
+	}
+	defer listener.Close()
+
+	log.Println("🚀 Servidor de protocolo customizado iniciado em :5000")
+	log.Printf("📊 Logs serão salvos em: %s", getCSVPath())
+	log.Printf("🔧 Server ID: %s", hostname())
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("Erro aceitando conexão: %v", err)
+			continue
+		}
+
+		go handleClient(conn)
+	}
 }

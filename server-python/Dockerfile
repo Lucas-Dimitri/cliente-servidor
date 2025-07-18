@@ -11,19 +11,7 @@ RUN pip install gunicorn==20.1.0 filelock==3.12.0
 RUN mkdir -p /data && chmod 777 /data
 
 COPY app.py .
-
-# Add a helper script to ensure clean shutdown
-COPY <<EOF /app/start.sh
-#!/bin/bash
-# Trap SIGTERM and other signals to ensure clean shutdown
-trap 'echo "Caught signal, shutting down..."; pkill -f gunicorn; sleep 2; exit 0' TERM INT
-
-# Start Gunicorn in the background
-gunicorn --bind 0.0.0.0:5000 --workers 4 --threads 2 app:app &
-
-# Wait for signals
-wait
-EOF
+COPY start.sh .
 
 RUN chmod +x /app/start.sh
 

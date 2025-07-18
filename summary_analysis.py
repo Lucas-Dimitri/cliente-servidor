@@ -11,20 +11,35 @@ def analyze_performance():
     """
     # Configurar arquivo de saída
     output_file = "performance_analysis_report.md"
-    
+
     # Criar buffer para capturar toda a saída
     output_lines = []
-    
+
     def write_output(text):
         """Função auxiliar para escrever tanto no terminal quanto no buffer"""
         print(text)
         output_lines.append(text)
-    
+
     # Cabeçalho do relatório
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     write_output("# 📊 Análise de Performance: Python vs Go")
     write_output("")
     write_output(f"**Relatório gerado em:** {timestamp}")
+    write_output("")
+    write_output("## 🎯 Metodologia")
+    write_output("")
+    write_output(
+        "Este relatório analisa o **tempo total para processar todos os clientes** de cada cenário,"
+    )
+    write_output("não apenas o tempo médio individual. A fórmula utilizada é:")
+    write_output("")
+    write_output(
+        "**Tempo Total do Cenário = Tempo Médio por Cliente × Número de Clientes**"
+    )
+    write_output("")
+    write_output(
+        "Esta abordagem fornece uma visão mais realista do desempenho total do sistema."
+    )
     write_output("")
     write_output("---")
 
@@ -64,9 +79,15 @@ def analyze_performance():
     write_output("")
     write_output("| Métrica | Python | Go | Total |")
     write_output("|---------|--------|----|----|")
-    write_output(f"| Requisições originais | {len(df_py):,} | {len(df_go):,} | {len(df_py) + len(df_go):,} |")
-    write_output(f"| Requisições após limpeza | {len(df_cleaned[df_cleaned['implementation'] == 'Python']):,} | {len(df_cleaned[df_cleaned['implementation'] == 'Go']):,} | {len(df_cleaned):,} |")
-    write_output(f"| Outliers removidos | - | - | {len(df_combined) - len(df_cleaned):,} |")
+    write_output(
+        f"| Requisições originais | {len(df_py):,} | {len(df_go):,} | {len(df_py) + len(df_go):,} |"
+    )
+    write_output(
+        f"| Requisições após limpeza | {len(df_cleaned[df_cleaned['implementation'] == 'Python']):,} | {len(df_cleaned[df_cleaned['implementation'] == 'Go']):,} | {len(df_cleaned):,} |"
+    )
+    write_output(
+        f"| Outliers removidos | - | - | {len(df_combined) - len(df_cleaned):,} |"
+    )
     write_output("")
 
     # Estatísticas gerais
@@ -81,13 +102,19 @@ def analyze_performance():
 
     write_output("### � Estatísticas Detalhadas")
     write_output("")
-    write_output("| Implementação | Requisições | Tempo Médio (s) | Mediana (s) | Desvio Padrão (s) | Mínimo (s) | Máximo (s) |")
-    write_output("|---------------|-------------|-----------------|-------------|------------------|------------|------------|")
-    
+    write_output(
+        "| Implementação | Requisições | Tempo Médio (s) | Mediana (s) | Desvio Padrão (s) | Mínimo (s) | Máximo (s) |"
+    )
+    write_output(
+        "|---------------|-------------|-----------------|-------------|------------------|------------|------------|"
+    )
+
     for impl in ["Python", "Go"]:
         data = stats_general.loc[impl]
-        write_output(f"| **{impl}** | {data['count']:,.0f} | {data['mean']:.4f} | {data['median']:.4f} | {data['std']:.4f} | {data['min']:.4f} | {data['max']:.4f} |")
-    
+        write_output(
+            f"| **{impl}** | {data['count']:,.0f} | {data['mean']:.4f} | {data['median']:.4f} | {data['std']:.4f} | {data['min']:.4f} | {data['max']:.4f} |"
+        )
+
     write_output("")
 
     # Comparação direta
@@ -102,12 +129,16 @@ def analyze_performance():
     write_output("|---------|-------|")
     write_output(f"| Diferença absoluta | **{difference:.4f}s** |")
     write_output(f"| Diferença percentual | **{percent_diff:.2f}%** |")
-    
+
     if go_mean < py_mean:
-        write_output(f"| **Resultado** | ✅ **Go é {abs(percent_diff):.2f}% mais rápido que Python** |")
+        write_output(
+            f"| **Resultado** | ✅ **Go é {abs(percent_diff):.2f}% mais rápido que Python** |"
+        )
     else:
-        write_output(f"| **Resultado** | ✅ **Python é {abs(percent_diff):.2f}% mais rápido que Go** |")
-    
+        write_output(
+            f"| **Resultado** | ✅ **Python é {abs(percent_diff):.2f}% mais rápido que Go** |"
+        )
+
     write_output("")
 
     # Análise por cenários
@@ -129,19 +160,27 @@ def analyze_performance():
         ["num_servers", "num_clients", "num_messages"]
     ):
         if len(group) == 2:  # Ambas implementações presentes
-            py_time = group[group["implementation"] == "Python"]["mean"].iloc[0]
-            go_time = group[group["implementation"] == "Go"]["mean"].iloc[0]
+            py_time_avg = group[group["implementation"] == "Python"]["mean"].iloc[0]
+            go_time_avg = group[group["implementation"] == "Go"]["mean"].iloc[0]
 
-            winner = "Go" if go_time < py_time else "Python"
-            improvement = abs(py_time - go_time) / max(py_time, go_time) * 100
+            # Calcular tempo total do cenário (tempo médio × número de clientes)
+            py_time_total = py_time_avg * clients
+            go_time_total = go_time_avg * clients
+
+            winner = "Go" if go_time_total < py_time_total else "Python"
+            improvement = (
+                abs(py_time_total - go_time_total)
+                / max(py_time_total, go_time_total)
+                * 100
+            )
 
             best_scenarios.append(
                 {
                     "servers": servers,
                     "clients": clients,
                     "messages": messages,
-                    "python_time": py_time,
-                    "go_time": go_time,
+                    "python_time": py_time_total,
+                    "go_time": go_time_total,
                     "winner": winner,
                     "improvement": improvement,
                 }
@@ -155,7 +194,7 @@ def analyze_performance():
     # Estatísticas dos vencedores
     go_wins = len(best_df[best_df["winner"] == "Go"])
     py_wins = len(best_df[best_df["winner"] == "Python"])
-    
+
     write_output("### 🏆 Vencedores por Cenário")
     write_output("")
     write_output("| Implementação | Cenários Vencidos | Percentual |")
@@ -166,16 +205,22 @@ def analyze_performance():
 
     # Top 5 maiores melhorias
     top_improvements = best_df.nlargest(5, "improvement")
-    
-    write_output("### 🚀 Top 5 Maiores Diferenças de Performance")
+
+    write_output("### 🚀 Top 5 Maiores Diferenças de Tempo Total")
     write_output("")
-    write_output("| Ranking | Vencedor | Melhoria | Cenário | Python (s) | Go (s) |")
-    write_output("|---------|----------|----------|---------|------------|--------|")
-    
+    write_output(
+        "| Ranking | Vencedor | Melhoria | Cenário | Python Total (s) | Go Total (s) |"
+    )
+    write_output(
+        "|---------|----------|----------|---------|------------------|--------------|"
+    )
+
     for idx, (i, row) in enumerate(top_improvements.iterrows(), 1):
         scenario = f"{int(row['servers'])} serv, {int(row['clients'])} cli, {int(row['messages'])} msg"
-        write_output(f"| {idx} | **{row['winner']}** | **{row['improvement']:.1f}%** | {scenario} | {row['python_time']:.4f} | {row['go_time']:.4f} |")
-    
+        write_output(
+            f"| {idx} | **{row['winner']}** | **{row['improvement']:.1f}%** | {scenario} | {row['python_time']:.2f} | {row['go_time']:.2f} |"
+        )
+
     write_output("")
 
     # Análise por número de mensagens
@@ -192,7 +237,7 @@ def analyze_performance():
     write_output("")
     write_output("| Mensagens | Python (s) | Go (s) | Vencedor | Melhoria |")
     write_output("|-----------|------------|--------|----------|----------|")
-    
+
     for messages in sorted(df_cleaned["num_messages"].unique()):
         py_time = msg_analysis.loc[messages, "Python"]
         go_time = msg_analysis.loc[messages, "Go"]
@@ -205,9 +250,11 @@ def analyze_performance():
             improvement = (go_time - py_time) / go_time * 100
             winner = f"✅ **Python**"
             improvement_text = f"{improvement:.1f}% mais rápido"
-            
-        write_output(f"| {int(messages):,} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement_text} |")
-    
+
+        write_output(
+            f"| {int(messages):,} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement_text} |"
+        )
+
     write_output("")
 
     # Análise de escalabilidade
@@ -237,8 +284,10 @@ def analyze_performance():
             winner = "**Python**"
             improvement = (go_time - py_time) / go_time * 100
 
-        write_output(f"| {int(clients)} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement:.1f} |")
-    
+        write_output(
+            f"| {int(clients)} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement:.1f} |"
+        )
+
     write_output("")
 
     # Performance vs número de servidores
@@ -264,8 +313,10 @@ def analyze_performance():
             winner = "**Python**"
             improvement = (go_time - py_time) / go_time * 100
 
-        write_output(f"| {int(servers)} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement:.1f} |")
-    
+        write_output(
+            f"| {int(servers)} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement:.1f} |"
+        )
+
     write_output("")
 
     # Conclusões
@@ -278,8 +329,12 @@ def analyze_performance():
     write_output("")
 
     if overall_go_wins > 50:
-        write_output(f"- ✅ **Go demonstrou superioridade em {overall_go_wins:.1f}% dos cenários**")
-        write_output(f"- 🚀 **Go é em média {abs(percent_diff):.2f}% mais rápido que Python**")
+        write_output(
+            f"- ✅ **Go demonstrou superioridade em {overall_go_wins:.1f}% dos cenários**"
+        )
+        write_output(
+            f"- 🚀 **Go é em média {abs(percent_diff):.2f}% mais rápido que Python**"
+        )
         write_output(f"- 📈 **Go mostra melhor escalabilidade em cargas altas**")
         write_output("")
 
@@ -289,17 +344,23 @@ def analyze_performance():
         write_output("- 🔥 **Go é ideal para microserviços e APIs de baixa latência**")
         write_output("- 🔄 **Considerar migração gradual de componentes críticos**")
     else:
-        write_output(f"- ✅ **Python demonstrou competitividade em {100-overall_go_wins:.1f}% dos cenários**")
-        write_output(f"- 🤝 **Diferença média de apenas {abs(percent_diff):.2f}% entre as implementações**")
+        write_output(
+            f"- ✅ **Python demonstrou competitividade em {100-overall_go_wins:.1f}% dos cenários**"
+        )
+        write_output(
+            f"- 🤝 **Diferença média de apenas {abs(percent_diff):.2f}% entre as implementações**"
+        )
         write_output(f"- 📈 **Ambas linguagens mostram boa escalabilidade**")
         write_output("")
 
         write_output("### 💡 Recomendações")
         write_output("")
         write_output("- ✅ **Python mantém-se viável para a maioria dos casos**")
-        write_output("- 🔧 **Foco na otimização antes de considerar mudança de linguagem**")
+        write_output(
+            "- 🔧 **Foco na otimização antes de considerar mudança de linguagem**"
+        )
         write_output("- 🎯 **Go pode ser considerado para componentes específicos**")
-    
+
     write_output("")
 
     write_output("## � Arquivos Gerados")
@@ -307,11 +368,15 @@ def analyze_performance():
     write_output("| Arquivo | Descrição |")
     write_output("|---------|-----------|")
     write_output(f"| `{output_file}` | Este relatório completo em Markdown |")
-    write_output("| `analysis_results_interactive/` | 16 gráficos 3D interativos |")
+    write_output(
+        "| `analysis_results_interactive/` | Gráficos 3D de tempo total por cenário |"
+    )
     write_output("| `requests_python.csv` | Dados brutos Python |")
     write_output("| `requests_go.csv` | Dados brutos Go |")
     write_output("")
-    write_output("💡 **Dica:** Abra qualquer arquivo `.html` da pasta `analysis_results_interactive/` no navegador para visualização detalhada!")
+    write_output(
+        "💡 **Dica:** Abra qualquer arquivo `.html` da pasta `analysis_results_interactive/` no navegador para visualização detalhada!"
+    )
     write_output("")
 
     write_output("---")

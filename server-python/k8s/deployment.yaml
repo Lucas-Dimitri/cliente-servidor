@@ -18,7 +18,7 @@ spec:
             - name: data-volume
               mountPath: /data
           image: meu-servidor-python
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
           ports:
             - containerPort: 5000
           # Resources removed to allow unlimited usage of available system resources

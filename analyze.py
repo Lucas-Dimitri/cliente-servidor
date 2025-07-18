@@ -89,11 +89,11 @@ def generate_performance_analysis_3d(file_py, file_go):
 
         # Layout
         fig.update_layout(
-            title=f"Performance por Carga de Mensagens - {msg_count} Mensagem(s)<br><sub>Clientes vs Servidores | Azul=Python, Vermelho=Go</sub>",
+            title=f"Tempo Total do Cenário - {msg_count} Mensagem(s)<br><sub>Clientes vs Servidores | Azul=Python, Vermelho=Go</sub>",
             scene=dict(
                 xaxis_title="Número de Clientes",
                 yaxis_title="Número de Servidores",
-                zaxis_title="Tempo Médio (s)",
+                zaxis_title="Tempo Total do Cenário (s)",
                 camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
             ),
             width=900,
@@ -117,7 +117,9 @@ def generate_performance_analysis_3d(file_py, file_go):
     # Python data
     py_scalability = scalability_stats[scalability_stats["implementation"] == "Python"]
     if not py_scalability.empty:
-        _add_overlapped_surface_messages_plotly(fig, py_scalability, "Python", "Blues", 0.7)
+        _add_overlapped_surface_messages_plotly(
+            fig, py_scalability, "Python", "Blues", 0.7
+        )
 
     # Go data
     go_scalability = scalability_stats[scalability_stats["implementation"] == "Go"]
@@ -125,11 +127,11 @@ def generate_performance_analysis_3d(file_py, file_go):
         _add_overlapped_surface_messages_plotly(fig, go_scalability, "Go", "Reds", 0.7)
 
     fig.update_layout(
-        title="Análise de Escalabilidade - Clientes vs Mensagens<br><sub>Como o desempenho varia com carga de trabalho | Azul=Python, Vermelho=Go</sub>",
+        title="Tempo Total por Cenário - Clientes vs Mensagens<br><sub>Como o tempo total varia com carga de trabalho | Azul=Python, Vermelho=Go</sub>",
         scene=dict(
             xaxis_title="Número de Clientes",
             yaxis_title="Número de Mensagens",
-            zaxis_title="Tempo Médio (s)",
+            zaxis_title="Tempo Total do Cenário (s)",
             camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
         ),
         width=900,
@@ -147,7 +149,9 @@ def generate_performance_analysis_3d(file_py, file_go):
     print("\n� Gráficos gerados:")
     print("   • clientes_vs_servidores_Xmsgs.html - Performance por carga de mensagens")
     print("   • escalabilidade_clientes_vs_mensagens.html - Análise de escalabilidade")
-    print("   • diferenca_performance_go_vs_python.html - Apenas diferença de performance")
+    print(
+        "   • diferenca_performance_go_vs_python.html - Apenas diferença de performance"
+    )
     print("\n📋 Para visualizar:")
     print("1. Abra o gerenciador de arquivos")
     print(f"2. Navegue até: {os.path.abspath(RESULTS_DIR)}")
@@ -167,7 +171,8 @@ def _add_overlapped_surface_plotly(fig, data, name, colorscale, opacity):
 
     x = data["clients"].values
     y = data["servers"].values
-    z = data["mean"].values
+    # Calcular tempo total do cenário (tempo médio × número de clientes)
+    z = data["mean"].values * data["clients"].values
 
     # Criar grid para interpolação
     if len(x) > 3:
@@ -199,7 +204,7 @@ def _add_overlapped_surface_plotly(fig, data, name, colorscale, opacity):
             marker=dict(size=6, opacity=0.9),
             name=f"{name} (Dados)",
             text=[
-                f"{name}<br>Clientes: {c}<br>Servidores: {s}<br>Tempo: {t:.4f}s"
+                f"{name}<br>Clientes: {c}<br>Servidores: {s}<br>Tempo Total: {t:.4f}s"
                 for c, s, t in zip(x, y, z)
             ],
             hovertemplate="%{text}<extra></extra>",
@@ -214,7 +219,8 @@ def _add_overlapped_surface_messages_plotly(fig, data, name, colorscale, opacity
 
     x = data["clients"].values
     y = data["messages"].values
-    z = data["mean"].values
+    # Calcular tempo total do cenário (tempo médio × número de clientes)
+    z = data["mean"].values * data["clients"].values
 
     # Criar grid para interpolação
     if len(x) > 3:
@@ -246,7 +252,7 @@ def _add_overlapped_surface_messages_plotly(fig, data, name, colorscale, opacity
             marker=dict(size=6, opacity=0.9),
             name=f"{name} (Dados)",
             text=[
-                f"{name}<br>Clientes: {c}<br>Mensagens: {m}<br>Tempo: {t:.4f}s"
+                f"{name}<br>Clientes: {c}<br>Mensagens: {m}<br>Tempo Total: {t:.4f}s"
                 for c, m, t in zip(x, y, z)
             ],
             hovertemplate="%{text}<extra></extra>",
@@ -271,13 +277,16 @@ def _create_performance_difference_chart(stats, results_dir):
     # Criar figura única focada APENAS na diferença
     fig = go.Figure()
 
-    # Diferença de performance (Go - Python)
+    # Diferença de performance (Go - Python) em tempo total do cenário
     if not py_data.empty and not go_data.empty:
         merged = pd.merge(
             py_data, go_data, on=["clients", "servers"], suffixes=("_py", "_go")
         )
         if not merged.empty:
-            diff = merged["mean_go"] - merged["mean_py"]
+            # Calcular tempo total para cada implementação
+            py_total = merged["mean_py"] * merged["clients"]
+            go_total = merged["mean_go"] * merged["clients"]
+            diff = go_total - py_total
 
             # Adicionar APENAS pontos de diferença
             fig.add_trace(
@@ -293,25 +302,25 @@ def _create_performance_difference_chart(stats, results_dir):
                         opacity=0.8,
                         showscale=True,
                         colorbar=dict(
-                            title="Diferença (s)<br>Vermelho: Go mais lento<br>Azul: Go mais rápido",
+                            title="Diferença Total (s)<br>Vermelho: Go mais lento<br>Azul: Go mais rápido",
                         ),
                         cmin=diff.min(),
                         cmax=diff.max(),
                     ),
                     name="Diferença de Performance",
                     text=[
-                        f"<b>Diferença: {d:.4f}s</b><br>"
+                        f"<b>Diferença Total: {d:.4f}s</b><br>"
                         f"Clientes: {c}<br>"
                         f"Servidores: {s}<br>"
-                        f"Python: {py:.4f}s<br>"
-                        f"Go: {go:.4f}s<br>"
+                        f"Python Total: {py:.4f}s<br>"
+                        f"Go Total: {go:.4f}s<br>"
                         f"<span style='color:{'blue' if d < 0 else 'red'}'>Go é {'mais rápido' if d < 0 else 'mais lento'}</span>"
                         for c, s, d, py, go in zip(
                             merged["clients"],
                             merged["servers"],
                             diff,
-                            merged["mean_py"],
-                            merged["mean_go"],
+                            py_total,
+                            go_total,
                         )
                     ],
                     hovertemplate="%{text}<extra></extra>",
@@ -352,11 +361,11 @@ def _create_performance_difference_chart(stats, results_dir):
 
     # Layout otimizado para diferença de performance
     fig.update_layout(
-        title="Diferença de Performance: Go vs Python<br><sub>Valores negativos = Go mais rápido | Valores positivos = Go mais lento</sub>",
+        title="Diferença de Tempo Total do Cenário: Go vs Python<br><sub>Valores negativos = Go mais rápido | Valores positivos = Go mais lento</sub>",
         scene=dict(
             xaxis_title="Número de Clientes",
             yaxis_title="Número de Servidores",
-            zaxis_title="Diferença de Tempo (s)<br>Go - Python",
+            zaxis_title="Diferença de Tempo Total (s)<br>Go - Python",
             camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
             bgcolor="rgba(240,240,240,0.8)",
         ),
@@ -395,7 +404,7 @@ def generate_server_load_analysis(file_py, file_go):
     df_combined.rename(
         columns={
             "num_servers": "servers",
-            "num_clients": "clients", 
+            "num_clients": "clients",
             "num_messages": "messages",
         },
         inplace=True,
@@ -446,11 +455,11 @@ def generate_server_load_analysis(file_py, file_go):
         _add_overlapped_surface(fig, go_infra, "Go", "Reds", 0.6)
 
     fig.update_layout(
-        title="Análise de Infraestrutura - Clientes vs Servidores<br><sub>Otimização de recursos | Azul=Python, Vermelho=Go</sub>",
+        title="Tempo Total por Infraestrutura - Clientes vs Servidores<br><sub>Otimização de recursos | Azul=Python, Vermelho=Go</sub>",
         scene=dict(
             xaxis_title="Número de Clientes",
-            yaxis_title="Número de Servidores", 
-            zaxis_title="Tempo Médio (s)",
+            yaxis_title="Número de Servidores",
+            zaxis_title="Tempo Total do Cenário (s)",
             camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
         ),
         width=1000,
@@ -467,7 +476,6 @@ def generate_server_load_analysis(file_py, file_go):
     print("   • Como a performance varia com número de servidores")
     print("   • Otimização de recursos de infraestrutura")
     print("   • Ponto ideal de servidores vs clientes")
-
 
 
 def generate_overlapped_comparison(file_py, file_go):
@@ -647,7 +655,8 @@ def _add_overlapped_surface(fig, data, name, colorscale, opacity):
 
     x = data["clients"].values
     y = data["servers"].values
-    z = data["mean"].values
+    # Calcular tempo total do cenário (tempo médio × número de clientes)
+    z = data["mean"].values * data["clients"].values
 
     # Criar grid para interpolação
     if len(x) > 3:
@@ -686,7 +695,7 @@ def _add_overlapped_surface(fig, data, name, colorscale, opacity):
             ),
             name=f"{name} (Dados)",
             text=[
-                f"{name}<br>Clientes: {c}<br>Servidores: {s}<br>Tempo: {t:.4f}s"
+                f"{name}<br>Clientes: {c}<br>Servidores: {s}<br>Tempo Total: {t:.4f}s"
                 for c, s, t in zip(x, y, z)
             ],
             hovertemplate="%{text}<extra></extra>",
@@ -701,7 +710,8 @@ def _add_overlapped_surface_messages(fig, data, name, colorscale, opacity):
 
     x = data["clients"].values
     y = data["messages"].values
-    z = data["mean"].values
+    # Calcular tempo total do cenário (tempo médio × número de clientes)
+    z = data["mean"].values * data["clients"].values
 
     # Criar grid para interpolação
     if len(x) > 3:
@@ -738,7 +748,7 @@ def _add_overlapped_surface_messages(fig, data, name, colorscale, opacity):
             ),
             name=f"{name} (Dados)",
             text=[
-                f"{name}<br>Clientes: {c}<br>Mensagens: {m}<br>Tempo: {t:.4f}s"
+                f"{name}<br>Clientes: {c}<br>Mensagens: {m}<br>Tempo Total: {t:.4f}s"
                 for c, m, t in zip(x, y, z)
             ],
             hovertemplate="%{text}<extra></extra>",
@@ -769,8 +779,14 @@ if __name__ == "__main__":
     print("\n🎉 Análise 3D completa gerada com sucesso!")
     print("📁 Verifique a pasta: analysis_results_interactive/")
     print("\n📊 Gráficos gerados:")
-    print("   🔹 clientes_vs_servidores_Xmsgs.html - Performance por carga de mensagens")
+    print(
+        "   🔹 clientes_vs_servidores_Xmsgs.html - Performance por carga de mensagens"
+    )
     print("   🔹 escalabilidade_clientes_vs_mensagens.html - Análise de escalabilidade")
-    print("   🔹 diferenca_performance_go_vs_python.html - APENAS diferença de performance")
-    print("   🔹 infraestrutura_clientes_vs_servidores.html - Otimização de infraestrutura")
+    print(
+        "   🔹 diferenca_performance_go_vs_python.html - APENAS diferença de performance"
+    )
+    print(
+        "   🔹 infraestrutura_clientes_vs_servidores.html - Otimização de infraestrutura"
+    )
     print("\n🌐 Abra qualquer arquivo .html no navegador para visualizar")
