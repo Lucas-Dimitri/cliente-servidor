@@ -121,7 +121,11 @@ def analyze_performance():
     py_mean = stats_general.loc["Python", "mean"]
     go_mean = stats_general.loc["Go", "mean"]
     difference = py_mean - go_mean
-    percent_diff = (difference / py_mean) * 100
+    # Diferença percentual sempre em relação ao mais lento
+    if abs(go_mean) > abs(py_mean):
+        percent_diff = (abs(difference) / abs(go_mean)) * 100
+    else:
+        percent_diff = (abs(difference) / abs(py_mean)) * 100
 
     write_output("### 🎯 Comparação Direta")
     write_output("")
@@ -130,14 +134,16 @@ def analyze_performance():
     write_output(f"| Diferença absoluta | **{difference:.4f}s** |")
     write_output(f"| Diferença percentual | **{percent_diff:.2f}%** |")
 
-    if go_mean < py_mean:
+    if py_mean < go_mean:
         write_output(
-            f"| **Resultado** | ✅ **Go é {abs(percent_diff):.2f}% mais rápido que Python** |"
+            f"| **Resultado** | ✅ **Python é {percent_diff:.2f}% mais rápido que Go** |"
+        )
+    elif go_mean < py_mean:
+        write_output(
+            f"| **Resultado** | ✅ **Go é {percent_diff:.2f}% mais rápido que Python** |"
         )
     else:
-        write_output(
-            f"| **Resultado** | ✅ **Python é {abs(percent_diff):.2f}% mais rápido que Go** |"
-        )
+        write_output(f"| **Resultado** | ⚖️ **Empate técnico** |")
 
     write_output("")
 
@@ -242,14 +248,17 @@ def analyze_performance():
         py_time = msg_analysis.loc[messages, "Python"]
         go_time = msg_analysis.loc[messages, "Go"]
 
-        if go_time < py_time:
+        if py_time < go_time:
+            improvement = (go_time - py_time) / go_time * 100
+            winner = f"✅ **Python**"
+            improvement_text = f"{improvement:.1f}% mais rápido"
+        elif go_time < py_time:
             improvement = (py_time - go_time) / py_time * 100
             winner = f"✅ **Go**"
             improvement_text = f"{improvement:.1f}% mais rápido"
         else:
-            improvement = (go_time - py_time) / go_time * 100
-            winner = f"✅ **Python**"
-            improvement_text = f"{improvement:.1f}% mais rápido"
+            winner = f"⚖️ Empate"
+            improvement_text = "0.0%"
 
         write_output(
             f"| {int(messages):,} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement_text} |"
@@ -277,12 +286,15 @@ def analyze_performance():
         py_time = client_scale.loc[clients, "Python"]
         go_time = client_scale.loc[clients, "Go"]
 
-        if go_time < py_time:
+        if py_time < go_time:
+            winner = "**Python**"
+            improvement = (go_time - py_time) / go_time * 100
+        elif go_time < py_time:
             winner = "**Go**"
             improvement = (py_time - go_time) / py_time * 100
         else:
-            winner = "**Python**"
-            improvement = (go_time - py_time) / go_time * 100
+            winner = "⚖️ Empate"
+            improvement = 0.0
 
         write_output(
             f"| {int(clients)} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement:.1f} |"
@@ -306,12 +318,15 @@ def analyze_performance():
         py_time = server_scale.loc[servers, "Python"]
         go_time = server_scale.loc[servers, "Go"]
 
-        if go_time < py_time:
+        if py_time < go_time:
+            winner = "**Python**"
+            improvement = (go_time - py_time) / go_time * 100
+        elif go_time < py_time:
             winner = "**Go**"
             improvement = (py_time - go_time) / py_time * 100
         else:
-            winner = "**Python**"
-            improvement = (go_time - py_time) / go_time * 100
+            winner = "⚖️ Empate"
+            improvement = 0.0
 
         write_output(
             f"| {int(servers)} | {py_time:.4f} | {go_time:.4f} | {winner} | {improvement:.1f} |"
@@ -324,11 +339,31 @@ def analyze_performance():
     write_output("")
 
     overall_go_wins = go_wins / len(best_df) * 100
+    overall_py_wins = py_wins / len(best_df) * 100
 
     write_output("### 🎯 Resumo Executivo")
     write_output("")
 
-    if overall_go_wins > 50:
+    if overall_py_wins > 50:
+        write_output(
+            f"- ✅ **Python demonstrou superioridade em {overall_py_wins:.1f}% dos cenários**"
+        )
+        write_output(
+            f"- 🚀 **Python é em média {abs(percent_diff):.2f}% mais rápido que Go**"
+        )
+        write_output(f"- 📈 **Python mostra melhor escalabilidade em cargas altas**")
+        write_output("")
+
+        write_output("### 💡 Recomendações")
+        write_output("")
+        write_output("- ⭐ **Priorizar Python para sistemas de alta performance**")
+        write_output(
+            "- 🔥 **Python é ideal para microserviços e APIs de baixa latência**"
+        )
+        write_output(
+            "- 🔄 **Considerar migração gradual de componentes críticos para Python**"
+        )
+    elif overall_go_wins > 50:
         write_output(
             f"- ✅ **Go demonstrou superioridade em {overall_go_wins:.1f}% dos cenários**"
         )
@@ -342,24 +377,27 @@ def analyze_performance():
         write_output("")
         write_output("- ⭐ **Priorizar Go para sistemas de alta performance**")
         write_output("- 🔥 **Go é ideal para microserviços e APIs de baixa latência**")
-        write_output("- 🔄 **Considerar migração gradual de componentes críticos**")
+        write_output(
+            "- 🔄 **Considerar migração gradual de componentes críticos para Go**"
+        )
     else:
         write_output(
-            f"- ✅ **Python demonstrou competitividade em {100-overall_go_wins:.1f}% dos cenários**"
-        )
-        write_output(
-            f"- 🤝 **Diferença média de apenas {abs(percent_diff):.2f}% entre as implementações**"
+            f"- ⚖️ **Empate técnico: ambas as linguagens apresentam desempenho semelhante**"
         )
         write_output(f"- 📈 **Ambas linguagens mostram boa escalabilidade**")
         write_output("")
 
         write_output("### 💡 Recomendações")
         write_output("")
-        write_output("- ✅ **Python mantém-se viável para a maioria dos casos**")
+        write_output(
+            "- ✅ **Ambas as linguagens são viáveis para a maioria dos casos**"
+        )
         write_output(
             "- 🔧 **Foco na otimização antes de considerar mudança de linguagem**"
         )
-        write_output("- 🎯 **Go pode ser considerado para componentes específicos**")
+        write_output(
+            "- 🎯 **Escolha pode ser baseada em outros critérios (equipe, ecossistema, etc.)**"
+        )
 
     write_output("")
 
